@@ -1,0 +1,10 @@
+(library
+ (name bonsai_revery)
+ (public_name bonsai_revery)
+ (libraries core_kernel core_kernel.bus core_kernel.moption bonsai
+   incremental incr_select lwt Revery Revery.lwt)
+ (preprocess
+  (pps brisk-reconciler.ppx ppx_jane -allow-unannotated-ignores
+    -check-doc-comments)))
+
+(documentation)

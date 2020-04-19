@@ -1,0 +1,11 @@
+(executable
+ (name main)
+ (public_name examples)
+ (preprocess
+  (pps ppx_jane))
+ (libraries bonsai_revery core_kernel))
+
+(install
+ (section bin)
+ (package bonsai_revery)
+ (files FontAwesome5FreeSolid.otf))

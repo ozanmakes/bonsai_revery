@@ -1,0 +1,100 @@
+{0 Bonsai_revery}
+
+{{:https://github.com/osener/bonsai_revery} Bonsai_revery} is a library for
+building desktop applications.
+
+It is implemented as a {{:https://github.com/janestreet/bonsai} Bonsai} backend
+that lets you build user interfaces with {{:https://www.outrunlabs.com/revery/}
+Revery}.
+
+For an API reference see {!Bonsai_revery}.
+
+Note: Bonsai_revery depends on development versions of some libraries such as
+[Bonsai] and [Core_kernel]. Unfortunately, this means you'll need a
+{{:https://github.com/osener/bonsai_revery/tree/master/package.json} big list}
+of Esy package resolutions.
+
+The following snippet demonstrates how to start a basic Bonsai_revery
+application. For something more advanced, see the
+{{:https://github.com/osener/bonsai_revery/tree/master/example} TodoMVC example}.
+{[
+open Core_kernel
+open Bonsai_revery
+open Bonsai_revery.Components
+open Bonsai.Infix
+
+module Action = struct
+  type t =
+    | Increase
+    | Decrease
+  [@@deriving sexp_of]
+end
+
+let state_component =
+  Bonsai.state_machine
+    (module Int)
+    (module Action)
+    ~default_model:0
+    ~apply_action:(fun ~inject:_ ~schedule_event:_ _input model -> function
+      | Action.Increase -> model + 1
+      | Decrease -> model - 1)
+    [%here]
+
+
+let input_component =
+  Bonsai.const
+    (Text_input.props
+       ~placeholder:"Enter fruit name"
+       ~default_value:"apple"
+       Attr.
+         [ style
+             Style.
+               [ width 300
+               ; font_size 30.0
+               ; border ~color:Colors.light_gray ~width:1
+               ]
+         ])
+  >>> Text_input.component
+
+
+let app =
+  let%map.Bonsai fruit_name, _set_value, input = input_component
+  and count, inject = state_component in
+
+  let button ?disabled action =
+    button ?disabled (fun ~hovered ->
+        Attr.
+          [ on_click (inject action)
+          ; style
+              Style.
+                [ position `Relative
+                ; font_size 30.0
+                ; width 30
+                ; height 30
+                ; border
+                    ~color:
+                      (if hovered then Colors.red else Colors.transparent_white)
+                    ~width:2
+                ; justify_content `Center
+                ; align_items `Center
+                ; margin_horizontal 10
+                ; border_radius 2.
+                ]
+          ]) in
+  box
+    []
+    [ text
+        Attr.[ style Style.[ font_size 50.0 ] ]
+        (Printf.sprintf "%s count: %i" (String.capitalize fruit_name) count)
+    ; input
+    ; box
+        Attr.[ style Style.[ flex_direction `Row ] ]
+        [ button Action.Increase "+"
+        ; button ~disabled:(count = 0) Action.Decrease "-"
+        ]
+    ]
+
+
+let () = Start.start_standalone app ~initial_input:()
+]}
+
