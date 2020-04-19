@@ -1,0 +1,17 @@
+profile = janestreet
+
+break-before-in = auto
+break-fun-decl = smart
+break-fun-sig = smart
+break-separators = before
+break-sequences = true
+break-struct = force
+cases-exp-indent = 2
+exp-grouping = preserve
+function-indent-nested = always
+indicate-multiline-delimiters = space
+let-binding-spacing = sparse
+margin = 100
+parse-docstrings = true
+sequence-blank-line = preserve-one
+wrap-comments = true
