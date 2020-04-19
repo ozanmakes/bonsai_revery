@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml"><head><title>index (bonsai_revery.index)</title><link rel="stylesheet" href="../odoc.css"/><meta charset="utf-8"/><meta name="generator" content="odoc 1.5.0"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><script src="../highlight.pack.js"></script><script>hljs.initHighlightingOnLoad();</script></head><body><div class="content"><header><nav><a href="../index.html">Up</a> – bonsai_revery</nav><h1 id="bonsai_revery"><a href="#bonsai_revery" class="anchor"></a>Bonsai_revery</h1><p><a href="https://github.com/osener/bonsai_revery">Bonsai_revery</a> is a library for building desktop applications.</p><p>It is implemented as a <a href="https://github.com/janestreet/bonsai">Bonsai</a> backend that lets you build user interfaces with <a href="https://www.outrunlabs.com/revery/">Revery</a>.</p><p>For an API reference see <a href="Bonsai_revery/index.html"><code>Bonsai_revery</code></a>.</p><p>Note: Bonsai_revery depends on development versions of some libraries such as <code>Bonsai</code> and <code>Core_kernel</code>. Unfortunately, this means you'll need a <a href="https://github.com/osener/bonsai_revery/tree/master/package.json">big list</a> of Esy package resolutions.</p><p>The following snippet demonstrates how to start a basic Bonsai_revery application. For something more advanced, see the <a href="https://github.com/osener/bonsai_revery/tree/master/example">TodoMVC example</a>.</p><pre><code class="ml">open Core_kernel
+open Bonsai_revery
+open Bonsai_revery.Components
+open Bonsai.Infix
+
+module Action = struct
+  type t =
+    | Increase
+    | Decrease
+  [@@deriving sexp_of]
+end
+
+let state_component =
+  Bonsai.state_machine
+    (module Int)
+    (module Action)
+    ~default_model:0
+    ~apply_action:(fun ~inject:_ ~schedule_event:_ _input model -&gt; function
+      | Action.Increase -&gt; model + 1
+      | Decrease -&gt; model - 1)
+    [%here]
+
+
+let input_component =
+  Bonsai.const
+    (Text_input.props
+       ~placeholder:&quot;Enter fruit name&quot;
+       ~default_value:&quot;apple&quot;
+       Attr.
+         [ style
+             Style.
+               [ width 300
+               ; font_size 30.0
+               ; border ~color:Colors.light_gray ~width:1
+               ]
+         ])
+  &gt;&gt;&gt; Text_input.component
+
+
+let app =
+  let%map.Bonsai fruit_name, _set_value, input = input_component
+  and count, inject = state_component in
+
+  let button ?disabled action =
+    button ?disabled (fun ~hovered -&gt;
+        Attr.
+          [ on_click (inject action)
+          ; style
+              Style.
+                [ position `Relative
+                ; font_size 30.0
+                ; width 30
+                ; height 30
+                ; border
+                    ~color:
+                      (if hovered then Colors.red else Colors.transparent_white)
+                    ~width:2
+                ; justify_content `Center
+                ; align_items `Center
+                ; margin_horizontal 10
+                ; border_radius 2.
+                ]
+          ]) in
+  box
+    []
+    [ text
+        Attr.[ style Style.[ font_size 50.0 ] ]
+        (Printf.sprintf &quot;%s count: %i&quot; (String.capitalize fruit_name) count)
+    ; input
+    ; box
+        Attr.[ style Style.[ flex_direction `Row ] ]
+        [ button Action.Increase &quot;+&quot;
+        ; button ~disabled:(count = 0) Action.Decrease &quot;-&quot;
+        ]
+    ]
+
+
+let () = Start.start_standalone app ~initial_input:()</code></pre></header></div></body></html>
