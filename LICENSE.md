@@ -1,7 +1,9 @@
 The MIT License
 
 Copyright (c) 2020 Ozan Sener
+
 Copyright (c) 2019--2020 Jane Street Group, LLC <opensource@janestreet.com>
+
 Copyright (c) 2018 Bryan Phelps
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
