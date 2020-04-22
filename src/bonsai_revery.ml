@@ -33,6 +33,7 @@ module Attr : sig
 
   open Node_events
 
+  val empty : t
   val node_ref : (UI.node -> Event.t) -> t
   val on_mouse_down : (Mouse_button.t -> Event.t) -> t
   val on_mouse_move : (Mouse_move.t -> Event.t) -> t

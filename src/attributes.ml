@@ -32,6 +32,7 @@ type custom_event =
   | Any_click of Event.t
 
 type t =
+  | Empty
   | Native_event_handler of native_event
   | Custom_event_handler of custom_event
   | Style of UI.Style.t
@@ -100,6 +101,7 @@ let make ?default_style:custom_default_style attribute_list =
          }) in
 
   List.iter attribute_list ~f:(function
+    | Empty -> ()
     | Style style -> attrs.style <- style
     | Tab_index i -> attrs.tab_index <- Some i
     | Custom_event_handler (Left_click e) ->
@@ -144,6 +146,7 @@ let make ?default_style:custom_default_style attribute_list =
   attrs
 
 
+let empty = Empty
 let node_ref f = Native_event_handler (Ref f)
 let on_mouse_down f = Native_event_handler (Mouse_down f)
 let on_mouse_move f = Native_event_handler (Mouse_move f)
