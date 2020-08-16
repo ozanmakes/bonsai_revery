@@ -128,7 +128,6 @@ let start_generic_poly
       let input =
         let%map input = Incr.Var.watch input_var in
         get_app_input ~input ~inject_outgoing:Out_event.inject in
-
       let%map snapshot =
         Bonsai_lib.Generic.Expert.eval
           ~input
@@ -136,6 +135,7 @@ let start_generic_poly
           ~model
           ~inject
           ~action_type_id
+          ~environment:Bonsai_types.Environment.empty
           ~incr_state:Incr.State.t
           component
       and model = model in
@@ -147,12 +147,10 @@ let start_generic_poly
       Handle.set_inject handle inject_incoming;
       Bus.write handle.extra extra;
       let on_display () ~schedule_action:_ = Handle.set_started handle in
-
       view, apply_action, on_display, model
   end
   in
   let _stopEventLoop = Revery_Lwt.startEventLoop () in
-
   Revery.App.start (fun reveryApp ->
       let model_v = Incr.Var.create initial_model in
       let model = Incr.Var.watch model_v in
@@ -165,7 +163,6 @@ let start_generic_poly
 
       let r, w = Lwt_stream.create () in
       let schedule_action action = w (Some action) in
-
       let module Event =
         Import.Event.Define (struct
           module Action = Revery_app.Action
@@ -179,10 +176,8 @@ let start_generic_poly
       Timber.Log.perf "initial stabilize" Incr.stabilize;
 
       let window = Revery.App.createWindow reveryApp "Bonsai_revery app" in
-
       let node, _apply_action, _on_display, _model = Incr.Observer.value_exn app in
       let redraw = Revery.UI.start window node in
-
       Incr.Observer.on_update_exn app ~f:(function
         | Initialized (node, _, _, _) | Changed (_, (node, _, _, _)) -> redraw node
         | Invalidated -> ());
@@ -192,7 +187,6 @@ let start_generic_poly
         let new_model = apply_action action () ~schedule_action in
         Incr.Var.set model_v new_model;
         Timber.Log.perf "post-action stabilize" Incr.stabilize in
-
       Option.iter with_handle ~f:(fun f -> Lwt.async (fun () -> f handle));
 
       Lwt.async (fun () ->

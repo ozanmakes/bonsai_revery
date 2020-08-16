@@ -89,7 +89,6 @@ let update_node attributes node =
 
 let make ?default_style:custom_default_style attribute_list =
   let attrs = make_attributes ?style:custom_default_style () in
-
   let handle f e = Event.Expert.handle (f e) in
   let handle_key f e =
     Event.Expert.handle
@@ -99,7 +98,6 @@ let make ?default_style:custom_default_style attribute_list =
          ; shift = Revery.Key.Keymod.isShiftDown e.keymod
          ; event_params = e
          }) in
-
   List.iter attribute_list ~f:(function
     | Empty -> ()
     | Style style -> attrs.style <- style
