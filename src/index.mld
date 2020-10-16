@@ -16,7 +16,7 @@ of Esy package resolutions.
 
 The following snippet demonstrates how to start a basic Bonsai_revery
 application. For something more advanced, see the
-{{:https://github.com/osener/bonsai_revery/tree/master/example} TodoMVC example}.
+{{:https://github.com/osener/bonsai_revery/tree/master/examples} TodoMVC example}.
 {[
 open Core_kernel
 open Bonsai_revery
