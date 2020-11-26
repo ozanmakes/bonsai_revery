@@ -29,9 +29,17 @@ end
 
 (** Element attributes accepted by {!Components} *)
 module Attr : sig
+  type font_info = Attributes.font_info
   type t = Attributes.t
 
   open Node_events
+
+  val make_font_info
+    :  ?family:Revery.Font.Family.t
+    -> ?weight:Revery.Font.Weight.t
+    -> ?size:float
+    -> unit
+    -> font_info
 
   val empty : t
   val node_ref : (UI.node -> Event.t) -> t
@@ -55,6 +63,7 @@ module Attr : sig
   val on_any_click : Event.t -> t
   val tab_index : int -> t
   val style : Style.t list -> t
+  val font : Attributes.font_info -> t
 end =
   Attributes
 
