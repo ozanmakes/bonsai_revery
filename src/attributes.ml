@@ -31,11 +31,18 @@ type custom_event =
   | Right_click of Event.t
   | Any_click of Event.t
 
+type font_info =
+  { family : Revery.Font.Family.t
+  ; weight : Revery.Font.Weight.t
+  ; size : float
+  }
+
 type t =
   | Empty
   | Native_event_handler of native_event
   | Custom_event_handler of custom_event
   | Style of UI.Style.t
+  | FontInfo of font_info
   | Tab_index of int
 
 let sexp_of_t = sexp_of_opaque
@@ -43,32 +50,35 @@ let default_custom_events = { on_left_click = None; on_right_click = None; on_an
 
 type attributes =
   { mutable style : UI.Style.t
+  ; mutable font_info : font_info
   ; mutable native_events : UI.node UI.NodeEvents.t
   ; mutable custom_events : custom_events
   ; mutable tab_index : int option
   }
 [@@deriving fields]
 
-let default_font_family =
-  let font_path family =
-    match (Revery.Font.Discovery.find family ~weight:FontManager.FontWeight.Normal).path with
-    | "" -> None
-    | path -> Some path in
-  [ "Noto Sans"; "Liberation Sans"; "DejaVu Sans" ]
-  |> List.find_map ~f:font_path
-  |> Option.value ~default:""
+let default_font_family = Revery.Font.Family.default
+let default_style = UI.Style.defaultStyle
+
+let default_font_info =
+  { family = default_font_family; weight = Revery.Font.Weight.Normal; size = 12. }
 
 
-let default_style = { UI.Style.defaultStyle with fontFamily = default_font_family }
+let make_font_info
+    ?(family = default_font_family) ?(weight = Revery.Font.Weight.Normal) ?(size = 12.) ()
+  =
+  { family; weight; size }
+
 
 let make_attributes
     ?(style = default_style)
+    ?(font_info = default_font_info)
     ?(native_events = UI.NodeEvents.make ())
     ?tab_index
     ?(custom_events = default_custom_events)
     ()
   =
-  { style; native_events; tab_index; custom_events }
+  { style; font_info; native_events; tab_index; custom_events }
 
 
 let update_node attributes node =
@@ -76,19 +86,41 @@ let update_node attributes node =
     attributes
     ~init:node
     ~style:(fun node _ _ x ->
-      node#setStyle x;
-      node)
+        node#setStyle x;
+        node)
     ~native_events:(fun node _ _ x ->
-      node#setEvents x;
-      node)
+        node#setEvents x;
+        node)
     ~tab_index:(fun node _ _ x ->
-      node#setTabIndex x;
-      node)
+        node#setTabIndex x;
+        node)
     ~custom_events:(fun node _ _ _ -> node)
+    ~font_info:(fun node _ _ _ -> node)
 
 
-let make ?default_style:custom_default_style attribute_list =
-  let attrs = make_attributes ?style:custom_default_style () in
+let update_text_node attributes node =
+  Fields_of_attributes.Direct.fold
+    attributes
+    ~init:node
+    ~style:(fun node _ _ x ->
+        node#setStyle x;
+        node)
+    ~native_events:(fun node _ _ x ->
+        node#setEvents x;
+        node)
+    ~tab_index:(fun node _ _ x ->
+        node#setTabIndex x;
+        node)
+    ~custom_events:(fun node _ _ _ -> node)
+    ~font_info:(fun node _ _ x ->
+        node#setFontFamily x.family;
+        node#setFontSize x.size;
+        node#setFontWeight x.weight;
+        node)
+
+
+let make ?default_style:custom_default_style ?default_font_info attribute_list =
+  let attrs = make_attributes ?style:custom_default_style ?font_info:default_font_info () in
   let handle f e = Event.Expert.handle (f e) in
   let handle_key f e =
     Event.Expert.handle
@@ -99,47 +131,48 @@ let make ?default_style:custom_default_style attribute_list =
          ; event_params = e
          }) in
   List.iter attribute_list ~f:(function
-    | Empty -> ()
-    | Style style -> attrs.style <- style
-    | Tab_index i -> attrs.tab_index <- Some i
-    | Custom_event_handler (Left_click e) ->
-      attrs.custom_events <- { attrs.custom_events with on_left_click = Some e }
-    | Custom_event_handler (Right_click e) ->
-      attrs.custom_events <- { attrs.custom_events with on_right_click = Some e }
-    | Custom_event_handler (Any_click e) ->
-      attrs.custom_events <- { attrs.custom_events with on_any_click = Some e }
-    | Native_event_handler (Ref f) ->
-      attrs.native_events <- { attrs.native_events with ref = Some (handle f) }
-    | Native_event_handler (Mouse_down f) ->
-      attrs.native_events <- { attrs.native_events with onMouseDown = Some (handle f) }
-    | Native_event_handler (Mouse_move f) ->
-      attrs.native_events <- { attrs.native_events with onMouseMove = Some (handle f) }
-    | Native_event_handler (Mouse_up f) ->
-      attrs.native_events <- { attrs.native_events with onMouseUp = Some (handle f) }
-    | Native_event_handler (Mouse_wheel f) ->
-      attrs.native_events <- { attrs.native_events with onMouseWheel = Some (handle f) }
-    | Native_event_handler (Key_down f) ->
-      attrs.native_events <- { attrs.native_events with onKeyDown = Some (handle_key f) }
-    | Native_event_handler (Key_up f) ->
-      attrs.native_events <- { attrs.native_events with onKeyUp = Some (handle_key f) }
-    | Native_event_handler (Text_input f) ->
-      attrs.native_events <- { attrs.native_events with onTextInput = Some (handle f) }
-    | Native_event_handler (Text_edit f) ->
-      attrs.native_events <- { attrs.native_events with onTextEdit = Some (handle f) }
-    | Native_event_handler (Mouse_enter f) ->
-      attrs.native_events <- { attrs.native_events with onMouseEnter = Some (handle f) }
-    | Native_event_handler (Mouse_leave f) ->
-      attrs.native_events <- { attrs.native_events with onMouseLeave = Some (handle f) }
-    | Native_event_handler (Mouse_over f) ->
-      attrs.native_events <- { attrs.native_events with onMouseOver = Some (handle f) }
-    | Native_event_handler (Mouse_out f) ->
-      attrs.native_events <- { attrs.native_events with onMouseOut = Some (handle f) }
-    | Native_event_handler (Dimensions_changed f) ->
-      attrs.native_events <- { attrs.native_events with onDimensionsChanged = Some (handle f) }
-    | Native_event_handler (Blur a) ->
-      attrs.native_events <- { attrs.native_events with onBlur = Some (handle (fun () -> a)) }
-    | Native_event_handler (Focus a) ->
-      attrs.native_events <- { attrs.native_events with onFocus = Some (handle (fun () -> a)) });
+      | Empty -> ()
+      | Style style -> attrs.style <- style
+      | FontInfo font_info -> attrs.font_info <- font_info
+      | Tab_index i -> attrs.tab_index <- Some i
+      | Custom_event_handler (Left_click e) ->
+        attrs.custom_events <- { attrs.custom_events with on_left_click = Some e }
+      | Custom_event_handler (Right_click e) ->
+        attrs.custom_events <- { attrs.custom_events with on_right_click = Some e }
+      | Custom_event_handler (Any_click e) ->
+        attrs.custom_events <- { attrs.custom_events with on_any_click = Some e }
+      | Native_event_handler (Ref f) ->
+        attrs.native_events <- { attrs.native_events with ref = Some (handle f) }
+      | Native_event_handler (Mouse_down f) ->
+        attrs.native_events <- { attrs.native_events with onMouseDown = Some (handle f) }
+      | Native_event_handler (Mouse_move f) ->
+        attrs.native_events <- { attrs.native_events with onMouseMove = Some (handle f) }
+      | Native_event_handler (Mouse_up f) ->
+        attrs.native_events <- { attrs.native_events with onMouseUp = Some (handle f) }
+      | Native_event_handler (Mouse_wheel f) ->
+        attrs.native_events <- { attrs.native_events with onMouseWheel = Some (handle f) }
+      | Native_event_handler (Key_down f) ->
+        attrs.native_events <- { attrs.native_events with onKeyDown = Some (handle_key f) }
+      | Native_event_handler (Key_up f) ->
+        attrs.native_events <- { attrs.native_events with onKeyUp = Some (handle_key f) }
+      | Native_event_handler (Text_input f) ->
+        attrs.native_events <- { attrs.native_events with onTextInput = Some (handle f) }
+      | Native_event_handler (Text_edit f) ->
+        attrs.native_events <- { attrs.native_events with onTextEdit = Some (handle f) }
+      | Native_event_handler (Mouse_enter f) ->
+        attrs.native_events <- { attrs.native_events with onMouseEnter = Some (handle f) }
+      | Native_event_handler (Mouse_leave f) ->
+        attrs.native_events <- { attrs.native_events with onMouseLeave = Some (handle f) }
+      | Native_event_handler (Mouse_over f) ->
+        attrs.native_events <- { attrs.native_events with onMouseOver = Some (handle f) }
+      | Native_event_handler (Mouse_out f) ->
+        attrs.native_events <- { attrs.native_events with onMouseOut = Some (handle f) }
+      | Native_event_handler (Dimensions_changed f) ->
+        attrs.native_events <- { attrs.native_events with onDimensionsChanged = Some (handle f) }
+      | Native_event_handler (Blur a) ->
+        attrs.native_events <- { attrs.native_events with onBlur = Some (handle (fun () -> a)) }
+      | Native_event_handler (Focus a) ->
+        attrs.native_events <- { attrs.native_events with onFocus = Some (handle (fun () -> a)) });
 
   attrs
 
@@ -166,3 +199,4 @@ let on_right_click e = Custom_event_handler (Right_click e)
 let on_any_click e = Custom_event_handler (Any_click e)
 let tab_index i = Tab_index i
 let style l = Style (UI.Style.create ~default:default_style ~style:l ())
+let font l = FontInfo l
