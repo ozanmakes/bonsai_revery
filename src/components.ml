@@ -289,14 +289,12 @@ let button =
          compose_event_handler attributes.native_events.onMouseOut ~f:(fun _ ->
              set_hovered (fun _ -> false)) in
        attributes.native_events
-         <- { attributes.native_events with onMouseOver = on_mouse_over; onMouseOut = on_mouse_out };
+       <- { attributes.native_events with onMouseOver = on_mouse_over; onMouseOut = on_mouse_out };
 
        let text_attributes =
          let style = attributes.style in
          let style =
            UI.Style.make
-             ~fontFamily:style.fontFamily
-             ~fontSize:style.fontSize
              ~lineHeight:style.lineHeight
              ~textWrap:style.textWrap
              ~textOverflow:style.textOverflow
@@ -375,8 +373,7 @@ module Text_input = struct
     let default_style =
       let open Revery.UI.LayoutTypes in
       { Attr.default_style with
-        fontSize = 18.
-      ; color = Colors.black
+        color = Colors.black
       ; cursor = Some Revery.MouseCursors.text
       ; flexDirection = Revery.UI.LayoutTypes.Row
       ; alignItems = AlignCenter
@@ -515,7 +512,8 @@ module Text_input = struct
                               ~showPlaceholder:show_placeholder
                               ~scrollOffset:scroll_offset
                               ~placeholderColor:input.placeholder_color
-                              ~textAttrs)
+                              ~color:attributes.style.color)
+                       ; font attributes.font_info
                        ]
                      (if show_placeholder then input.placeholder else value)
                  ]
