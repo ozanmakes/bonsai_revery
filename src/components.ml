@@ -63,9 +63,9 @@ let clickable_box' =
                attributes.Attr.custom_events.on_any_click
                ::
                ( match mouse_evt.button with
-               | Revery.MouseButton.BUTTON_LEFT -> [ attributes.custom_events.on_left_click ]
-               | Revery.MouseButton.BUTTON_RIGHT -> [ attributes.custom_events.on_right_click ]
-               | _ -> [] ) in
+                 | Revery.MouseButton.BUTTON_LEFT -> [ attributes.custom_events.on_left_click ]
+                 | Revery.MouseButton.BUTTON_RIGHT -> [ attributes.custom_events.on_right_click ]
+                 | _ -> [] ) in
 
              Event.Many (List.filter_map events ~f:Fn.id) )
            else Event.no_op in
@@ -75,32 +75,32 @@ let clickable_box' =
          let user_on_mouse_up = attributes.native_events.onMouseUp in
 
          attributes.native_events
-           <- { attributes.native_events with
-                onMouseLeave =
-                  Some
-                    (fun e ->
-                      release_capture ();
+         <- { attributes.native_events with
+              onMouseLeave =
+                Some
+                  (fun e ->
+                     release_capture ();
 
-                      Option.iter user_on_mouse_leave ~f:(fun f -> f e))
-              ; onMouseDown =
-                  Some
-                    (fun e ->
-                      capture ();
+                     Option.iter user_on_mouse_leave ~f:(fun f -> f e))
+            ; onMouseDown =
+                Some
+                  (fun e ->
+                     capture ();
 
-                      Option.iter user_on_mouse_down ~f:(fun f -> f e))
-              ; onMouseUp =
-                  Some
-                    (fun e ->
-                      Option.iter user_on_mouse_up ~f:(fun f -> f e);
+                     Option.iter user_on_mouse_down ~f:(fun f -> f e))
+            ; onMouseUp =
+                Some
+                  (fun e ->
+                     Option.iter user_on_mouse_up ~f:(fun f -> f e);
 
-                      on_mouse_up e |> Event.Expert.handle)
-              };
+                     on_mouse_up e |> Event.Expert.handle)
+            };
 
          attributes.style
-           <- { attributes.style with
-                cursor =
-                  Option.first_some attributes.style.cursor (Some Revery.MouseCursors.pointer)
-              }
+         <- { attributes.style with
+              cursor =
+                Option.first_some attributes.style.cursor (Some Revery.MouseCursors.pointer)
+            }
        end;
 
        native_box attributes children)
@@ -253,9 +253,9 @@ let tick =
          UI.React.Hooks.effect
            (OnMountAndIf ((fun a b -> Time.Span.(a <> b)), every))
            (fun () ->
-             add_interval every;
+              add_interval every;
 
-             Some (fun () -> remove_interval every)) in
+              Some (fun () -> remove_interval every)) in
 
        node)
 
@@ -265,8 +265,8 @@ let compose_event_handler ~f = function
   | Some e ->
     Some
       (fun x ->
-        f x;
-        e x)
+         f x;
+         e x)
 
 
 let button =
@@ -570,7 +570,7 @@ module Text_input = struct
         ~cutoff:
           (Incr.Cutoff.create
              (fun ~old_value:(old_timer, old_input) ~new_value:(new_timer, new_input) ->
-               Bool.equal old_timer new_timer && phys_equal old_input new_input)) in
+                Bool.equal old_timer new_timer && phys_equal old_input new_input)) in
 
     ignore @>> cursor_on |> Bonsai.Arrow.extend_first >>> cutoff >>> component
 end
