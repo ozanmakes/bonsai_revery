@@ -420,7 +420,7 @@ module Text_input = struct
       let update value cursor_position = inject (Action.Text_input (value, cursor_position)) in
 
       let handle_text_input (event : Node_events.Text_input.t) =
-        let value, cursor_position = addCharacter value event.text cursor_position in
+        let value, cursor_position = insertString value event.text cursor_position in
         update value cursor_position in
 
       let handle_key_down (keyboard_event : Node_events.Keyboard.t) =
