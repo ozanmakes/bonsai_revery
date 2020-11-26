@@ -383,14 +383,12 @@ module Text_input = struct
       }
 
 
+    let default_font_info = Attr.{ default_font_info with size = 18. }
+
     let compute ~inject ((cursor_on, input) : Input.t) (model : Model.t) =
       let open Revery.UI.Components.Input in
-      let textAttrs =
-        let attributes = Attr.make ~default_style input.attributes in
-        { fontFamily = attributes.style.fontFamily
-        ; fontSize = attributes.style.fontSize
-        ; color = attributes.style.color
-        } in
+      let attributes = Attr.make ~default_style ~default_font_info input.attributes in
+      let font_info = attributes.font_info in
       let value = Option.first_some model.value input.default_value |> Option.value ~default:"" in
       let set_value value = inject (Action.Set_value value) in
       let show_placeholder = String.equal value "" in
@@ -399,10 +397,11 @@ module Text_input = struct
 
       let measure_text_width text =
         let dimensions =
-          Revery_Draw.Text.measure
+          Revery_Draw.Text.dimensions
             ~smoothing:Revery.Font.Smoothing.default
-            ~fontFamily:textAttrs.fontFamily
-            ~fontSize:textAttrs.fontSize
+            ~fontFamily:font_info.family
+            ~fontSize:font_info.size
+            ~fontWeight:font_info.weight
             text in
         Float.to_int dimensions.width in
 
@@ -464,21 +463,21 @@ module Text_input = struct
         let offset = textWidth - !scroll_offset in
         tick ~every:(if model.focused then Time.Span.of_ms 16.0 else Time.Span.of_hr 1.0)
         @@ box
-             Attr.[ style (Styles.cursor ~offset) ]
-             [ opacity
-                 ~opacity:(if model.focused && cursor_on then 1.0 else 0.0)
-                 [ box
-                     Attr.
-                       [ style
-                           Style.
-                             [ width Constants.cursorWidth
-                             ; height (Float.to_int textAttrs.fontSize)
-                             ; background_color input.cursor_color
-                             ]
-                       ]
-                     []
-                 ]
-             ] in
+          Attr.[ style (Styles.cursor ~offset) ]
+          [ opacity
+              ~opacity:(if model.focused && cursor_on then 1.0 else 0.0)
+              [ box
+                  Attr.
+                    [ style
+                        Style.
+                          [ width Constants.cursorWidth
+                          ; height (Float.to_int attributes.font_info.size)
+                          ; background_color input.cursor_color
+                          ]
+                    ]
+                  []
+              ]
+          ] in
 
       let attributes =
         Attr.(
