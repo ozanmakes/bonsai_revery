@@ -211,11 +211,12 @@ let tick =
     | [] -> ticker.clear_active_interval <- empty_interval
     | interval :: _ ->
       ticker.clear_active_interval
-        <- Revery.Tick.interval
-             (fun _ ->
-               Incr.Clock.advance_clock Incr.clock ~to_:(Time_ns.now ());
-               Timber.Log.perf "tick stabilize" Incr.stabilize)
-             (Revery.Time.ofFloatSeconds (Time.Span.to_sec interval)) in
+      <- Revery.Tick.interval
+          ~name:"tick stabilize"
+          (fun _ ->
+             Incr.Clock.advance_clock Incr.clock ~to_:(Time_ns.now ());
+             Timber.Log.perf "tick stabilize" Incr.stabilize)
+          (Revery.Time.ofFloatSeconds (Time.Span.to_sec interval)) in
 
   let add_interval interval =
     let restart =
