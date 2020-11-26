@@ -164,11 +164,12 @@ let text' ~use_dynamic_key name =
         let textNode = (Revery_UI_Primitives.PrimitiveNodeFactory.get ()).createTextNode text in
         textNode#setSmoothing Revery_Font.Smoothing.default;
         let open UI.React in
-        ( { make = (fun () -> Attr.update_node attributes (Obj.magic textNode))
+        ( { make = (fun () -> Obj.magic (Attr.update_text_node attributes textNode))
           ; configureInstance =
               (fun ~isFirstRender:_ node ->
-                (Obj.magic node : Revery_UI.textNode)#setText text;
-                Attr.update_node attributes node)
+                 let text_node : Revery_UI.textNode = Obj.magic node in
+                 text_node#setText text;
+                 Obj.magic (Attr.update_text_node attributes text_node))
           ; children = UI.React.empty
           ; insertNode
           ; deleteNode
