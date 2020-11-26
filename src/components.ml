@@ -490,12 +490,12 @@ module Text_input = struct
           :: on_focus (inject Action.Focus)
           :: on_blur (inject Action.Blur)
           :: input.attributes)
-        |> Attr.make ~default_style in
+        |> Attr.make ~default_style ~default_font_info in
 
       attributes.style
-        <- { attributes.style with
-             cursor = Option.first_some attributes.style.cursor (Some Revery.MouseCursors.text)
-           };
+      <- { attributes.style with
+           cursor = Option.first_some attributes.style.cursor (Some Revery.MouseCursors.text)
+         };
 
       let view =
         clickable_box
