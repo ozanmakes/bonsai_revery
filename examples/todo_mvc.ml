@@ -267,10 +267,6 @@ module Components = struct
 
 
       let input = Style.[ border ~width:0 ~color:Colors.transparent_white; width 4000 ]
-
-      (* [ font_size Theme.font_size; border ~width:0 ~color:Colors.transparent_white; width 4000 ] *)
-
-      (* let input = Attr.[ style input; font Theme.font_info ] *)
     end
 
     let view ~all_completed ~on_toggle_all children =

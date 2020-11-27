@@ -38,6 +38,8 @@ module Attr : sig
     :  ?family:Revery.Font.Family.t
     -> ?weight:Revery.Font.Weight.t
     -> ?size:float
+    -> ?italicized:bool
+    -> ?underlined:bool
     -> unit
     -> font_info
 

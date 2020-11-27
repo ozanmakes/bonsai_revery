@@ -35,6 +35,8 @@ type font_info =
   { family : Revery.Font.Family.t
   ; weight : Revery.Font.Weight.t
   ; size : float
+  ; italicized : bool
+  ; underlined : bool
   }
 
 type t =
@@ -61,13 +63,23 @@ let default_font_family = Revery.Font.Family.default
 let default_style = UI.Style.defaultStyle
 
 let default_font_info =
-  { family = default_font_family; weight = Revery.Font.Weight.Normal; size = 12. }
+  { family = default_font_family
+  ; weight = Revery.Font.Weight.Normal
+  ; size = 12.
+  ; italicized = false
+  ; underlined = false
+  }
 
 
 let make_font_info
-    ?(family = default_font_family) ?(weight = Revery.Font.Weight.Normal) ?(size = 12.) ()
+    ?(family = default_font_family)
+    ?(weight = Revery.Font.Weight.Normal)
+    ?(size = 12.)
+    ?(italicized = false)
+    ?(underlined = false)
+    ()
   =
-  { family; weight; size }
+  { family; weight; size; italicized; underlined }
 
 
 let make_attributes
