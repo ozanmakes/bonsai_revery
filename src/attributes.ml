@@ -31,28 +31,51 @@ type custom_event =
   | Right_click of Event.t
   | Any_click of Event.t
 
-type font_info =
+type text_spec =
   { family : Revery.Font.Family.t
   ; weight : Revery.Font.Weight.t
   ; size : float
+  ; smoothing : Revery.Font.Smoothing.t
   ; italicized : bool
   ; underlined : bool
   }
+
+type image_spec =
+  { opacity : float
+  ; resize_mode : Revery.UI.ImageResizeMode.t
+  }
+
+type kind_spec =
+  | Node
+  | TextNode of text_spec
+  | ImageNode of image_spec
+
+let map_text_kind ~f = function
+  | Node -> Node
+  | TextNode spec -> TextNode (f spec)
+  | ImageNode _ as k -> k
+
+
+let map_image_kind ~f = function
+  | Node -> Node
+  | TextNode _ as k -> k
+  | ImageNode spec -> ImageNode (f spec)
+
 
 type t =
   | Empty
   | Native_event_handler of native_event
   | Custom_event_handler of custom_event
   | Style of UI.Style.t
-  | FontInfo of font_info
+  | Kind of kind_spec
   | Tab_index of int
 
 let sexp_of_t = sexp_of_opaque
 let default_custom_events = { on_left_click = None; on_right_click = None; on_any_click = None }
 
 type attributes =
-  { mutable style : UI.Style.t
-  ; mutable font_info : font_info
+  { mutable style : UI.Style.t (* ; mutable font_info : font_info *)
+  ; mutable kind : kind_spec
   ; mutable native_events : UI.node UI.NodeEvents.t
   ; mutable custom_events : custom_events
   ; mutable tab_index : int option
@@ -62,40 +85,43 @@ type attributes =
 let default_font_family = Revery.Font.Family.default
 let default_style = UI.Style.defaultStyle
 
-let default_font_info =
+let default_text_spec =
   { family = default_font_family
   ; weight = Revery.Font.Weight.Normal
   ; size = 12.
+  ; smoothing = Revery.Font.Smoothing.default
   ; italicized = false
   ; underlined = false
   }
 
 
-let make_font_info
+let default_text_kind = TextNode default_text_spec
+
+let make_text_kind
     ?(family = default_font_family)
     ?(weight = Revery.Font.Weight.Normal)
     ?(size = 12.)
+    ?(smoothing = Revery.Font.Smoothing.default)
     ?(italicized = false)
     ?(underlined = false)
     ()
   =
-  { family; weight; size; italicized; underlined }
+  TextNode { family; weight; size; smoothing; italicized; underlined }
 
 
 let make_attributes
     ?(style = default_style)
-    ?(font_info = default_font_info)
+    ?(kind = Node)
     ?(native_events = UI.NodeEvents.make ())
     ?tab_index
     ?(custom_events = default_custom_events)
     ()
   =
-  { style; font_info; native_events; tab_index; custom_events }
+  { style; kind; native_events; tab_index; custom_events }
 
 
-let update_node attributes node =
+let update_node' node =
   Fields_of_attributes.Direct.fold
-    attributes
     ~init:node
     ~style:(fun node _ _ x ->
         node#setStyle x;
@@ -107,32 +133,36 @@ let update_node attributes node =
         node#setTabIndex x;
         node)
     ~custom_events:(fun node _ _ _ -> node)
-    ~font_info:(fun node _ _ _ -> node)
 
+
+let update_node attributes node = update_node' node attributes ~kind:(fun node _ _ _ -> node)
 
 let update_text_node attributes node =
-  Fields_of_attributes.Direct.fold
-    attributes
-    ~init:node
-    ~style:(fun node _ _ x ->
-        node#setStyle x;
-        node)
-    ~native_events:(fun node _ _ x ->
-        node#setEvents x;
-        node)
-    ~tab_index:(fun node _ _ x ->
-        node#setTabIndex x;
-        node)
-    ~custom_events:(fun node _ _ _ -> node)
-    ~font_info:(fun node _ _ x ->
-        node#setFontFamily x.family;
-        node#setFontSize x.size;
-        node#setFontWeight x.weight;
-        node)
+  update_node' node attributes ~kind:(fun node _ _ kind ->
+      ( match kind with
+        | TextNode x ->
+          node#setFontFamily x.family;
+          node#setFontSize x.size;
+          node#setFontWeight x.weight;
+          node#setSmoothing x.smoothing;
+          node#setItalicized x.italicized;
+          node#setUnderlined x.underlined
+        | _ -> () );
+      node)
 
 
-let make ?default_style:custom_default_style ?default_font_info attribute_list =
-  let attrs = make_attributes ?style:custom_default_style ?font_info:default_font_info () in
+let update_image_node attributes node =
+  update_node' node attributes ~kind:(fun node _ _ kind ->
+      ( match kind with
+        | ImageNode x ->
+          node#setOpacity x.opacity;
+          node#setResizeMode x.resize_mode
+        | _ -> () );
+      node)
+
+
+let make ?default_style:custom_default_style ?default_kind attribute_list =
+  let attrs = make_attributes ?style:custom_default_style ?kind:default_kind () in
   let handle f e = Event.Expert.handle (f e) in
   let handle_key f e =
     Event.Expert.handle
@@ -145,7 +175,7 @@ let make ?default_style:custom_default_style ?default_font_info attribute_list =
   List.iter attribute_list ~f:(function
       | Empty -> ()
       | Style style -> attrs.style <- style
-      | FontInfo font_info -> attrs.font_info <- font_info
+      | Kind spec -> attrs.kind <- spec
       | Tab_index i -> attrs.tab_index <- Some i
       | Custom_event_handler (Left_click e) ->
         attrs.custom_events <- { attrs.custom_events with on_left_click = Some e }
@@ -211,4 +241,4 @@ let on_right_click e = Custom_event_handler (Right_click e)
 let on_any_click e = Custom_event_handler (Any_click e)
 let tab_index i = Tab_index i
 let style l = Style (UI.Style.create ~default:default_style ~style:l ())
-let font l = FontInfo l
+let kind l = Kind l

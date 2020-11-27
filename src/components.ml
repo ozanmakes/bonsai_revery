@@ -162,7 +162,6 @@ let text' ~use_dynamic_key name =
     let key : UI.React.Key.t option = Obj.magic key in
     component ?key (fun hooks ->
         let textNode = (Revery_UI_Primitives.PrimitiveNodeFactory.get ()).createTextNode text in
-        textNode#setSmoothing Revery_Font.Smoothing.default;
         let open UI.React in
         ( { make = (fun () -> Obj.magic (Attr.update_text_node attributes textNode))
           ; configureInstance =
@@ -183,6 +182,37 @@ let text =
   fun attribute_list text ->
     let attributes = Attr.make attribute_list in
     text' attributes text
+
+
+let image' ~use_dynamic_key name =
+  let component = UI.React.Expert.nativeComponent ~useDynamicKey:use_dynamic_key name in
+
+  fun ?(key : int option) attributes path ->
+    let key : UI.React.Key.t option = Obj.magic key in
+    component ?key (fun hooks ->
+        let imageNode =
+          Revery_IO.Image.fromAssetPath path
+          |> (Revery_UI_Primitives.PrimitiveNodeFactory.get ()).createImageNode in
+        let open UI.React in
+        ( { make = (fun () -> Obj.magic (Attr.update_image_node attributes imageNode))
+          ; configureInstance =
+              (fun ~isFirstRender:_ node ->
+                 let image_node : Revery_UI.imageNode = Obj.magic node in
+                 Revery_IO.Image.fromAssetPath path |> image_node#setData;
+                 Obj.magic (Attr.update_image_node attributes image_node))
+          ; children = UI.React.empty
+          ; insertNode
+          ; deleteNode
+          ; moveNode
+          }
+        , hooks ))
+
+
+let image =
+  let image' = image' ~use_dynamic_key:false (Source_code_position.to_string [%here]) ?key:None in
+  fun attribute_list path ->
+    let attributes = Attr.make attribute_list in
+    image' attributes path
 
 
 let opacity =
@@ -383,12 +413,15 @@ module Text_input = struct
       }
 
 
-    let default_font_info = Attr.{ default_font_info with size = 18. }
+    let default_kind = Attr.(TextNode { default_text_spec with size = 18. })
 
     let compute ~inject ((cursor_on, input) : Input.t) (model : Model.t) =
       let open Revery.UI.Components.Input in
-      let attributes = Attr.make ~default_style ~default_font_info input.attributes in
-      let font_info = attributes.font_info in
+      let attributes = Attr.make ~default_style ~default_kind input.attributes in
+      let font_info =
+        match attributes.kind with
+        | TextNode spec -> spec
+        | _ -> Attr.default_text_spec in
       let value = Option.first_some model.value input.default_value |> Option.value ~default:"" in
       let set_value value = inject (Action.Set_value value) in
       let show_placeholder = String.equal value "" in
@@ -471,7 +504,7 @@ module Text_input = struct
                     [ style
                         Style.
                           [ width Constants.cursorWidth
-                          ; height (Float.to_int attributes.font_info.size)
+                          ; height (Float.to_int font_info.size)
                           ; background_color input.cursor_color
                           ]
                     ]
@@ -490,7 +523,7 @@ module Text_input = struct
           :: on_focus (inject Action.Focus)
           :: on_blur (inject Action.Blur)
           :: input.attributes)
-        |> Attr.make ~default_style ~default_font_info in
+        |> Attr.make ~default_style ~default_kind in
 
       attributes.style
       <- { attributes.style with
@@ -513,7 +546,7 @@ module Text_input = struct
                               ~scrollOffset:scroll_offset
                               ~placeholderColor:input.placeholder_color
                               ~color:attributes.style.color)
-                       ; font attributes.font_info
+                       ; kind attributes.kind
                        ]
                      (if show_placeholder then input.placeholder else value)
                  ]
