@@ -413,7 +413,7 @@ module Text_input = struct
       }
 
 
-    let default_kind = Attr.(TextNode { default_text_spec with size = 18. })
+    let default_kind = Attr.KindSpec.(TextNode { Text.default with size = 18. })
 
     let compute ~inject ((cursor_on, input) : Input.t) (model : Model.t) =
       let open Revery.UI.Components.Input in
@@ -421,7 +421,7 @@ module Text_input = struct
       let font_info =
         match attributes.kind with
         | TextNode spec -> spec
-        | _ -> Attr.default_text_spec in
+        | _ -> Attr.KindSpec.Text.default in
       let value = Option.first_some model.value input.default_value |> Option.value ~default:"" in
       let set_value value = inject (Action.Set_value value) in
       let show_placeholder = String.equal value "" in

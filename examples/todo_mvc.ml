@@ -82,7 +82,7 @@ module Theme = struct
   let button_color = Color.hex "#9573C4"
   let hovered_button_color = Color.hex "#C9AEF0"
   let danger_color = Color.hex "#f7c5c6"
-  let font_info = Attr.make_text_kind ~size:font_size ()
+  let font_info = Attr.KindSpec.(TextNode (Text.make ~size:font_size ()))
   let bonsai_path = "bonsai.png"
 end
 
@@ -125,7 +125,8 @@ module Styles = struct
       ]
 
 
-  let title_font = Attr.map_text_kind ~f:(fun a -> { a with size = Theme.rem 4. }) Theme.font_info
+  let title_font =
+    Attr.KindSpec.update_text ~f:(fun a -> { a with size = Theme.rem 4. }) Theme.font_info
 end
 
 module Components = struct
@@ -151,7 +152,9 @@ module Components = struct
 
 
       let text = Style.[ color Theme.button_color; text_wrap NoWrap ]
-      let font = Attr.map_text_kind ~f:(fun a -> { a with size = Theme.rem 0.8 }) Theme.font_info
+
+      let font =
+        Attr.KindSpec.update_text ~f:(fun a -> { a with size = Theme.rem 0.8 }) Theme.font_info
     end
 
     let view ~selected on_click title =
@@ -188,7 +191,7 @@ module Components = struct
 
 
       let checkmark_font =
-        Attr.map_text_kind
+        Attr.KindSpec.update_text
           ~f:(fun a -> { a with family = Revery.Font.Family.fromFile "FontAwesome5FreeSolid.otf" })
           Theme.font_info
     end
@@ -236,7 +239,7 @@ module Components = struct
 
 
       let remove_button_font =
-        Attr.map_text_kind
+        Attr.KindSpec.update_text
           ~f:(fun a -> { a with family = Revery.Font.Family.fromFile "FontAwesome5FreeSolid.otf" })
           Theme.font_info
     end
@@ -280,7 +283,7 @@ module Components = struct
 
 
       let toggle_all_font =
-        Attr.map_text_kind
+        Attr.KindSpec.update_text
           ~f:(fun a -> { a with family = Revery.Font.Family.fromFile "FontAwesome5FreeSolid.otf" })
           Theme.font_info
 
@@ -334,7 +337,8 @@ module Components = struct
           ]
 
 
-      let font = Attr.map_text_kind ~f:(fun a -> { a with size = Theme.rem 0.85 }) Theme.font_info
+      let font =
+        Attr.KindSpec.update_text ~f:(fun a -> { a with size = Theme.rem 0.85 }) Theme.font_info
     end
 
     let view ~inject ~active_count ~completed_count ~current_filter =

@@ -31,87 +31,100 @@ type custom_event =
   | Right_click of Event.t
   | Any_click of Event.t
 
-type text_spec =
-  { family : Revery.Font.Family.t
-  ; weight : Revery.Font.Weight.t
-  ; size : float
-  ; smoothing : Revery.Font.Smoothing.t
-  ; italicized : bool
-  ; underlined : bool
-  }
+module KindSpec = struct
+  module Text = struct
+    type t =
+      { family : Revery.Font.Family.t
+      ; weight : Revery.Font.Weight.t
+      ; size : float
+      ; smoothing : Revery.Font.Smoothing.t
+      ; italicized : bool
+      ; underlined : bool
+      ; features : Revery.Font.Feature.t list
+      }
 
-type image_spec =
-  { opacity : float
-  ; resize_mode : Revery.UI.ImageResizeMode.t
-  }
-
-type kind_spec =
-  | Node
-  | TextNode of text_spec
-  | ImageNode of image_spec
-
-let map_text_kind ~f = function
-  | Node -> Node
-  | TextNode spec -> TextNode (f spec)
-  | ImageNode _ as k -> k
+    let default =
+      { family = Revery.Font.Family.default
+      ; weight = Revery.Font.Weight.Normal
+      ; size = 12.
+      ; smoothing = Revery.Font.Smoothing.default
+      ; italicized = false
+      ; underlined = false
+      ; features = []
+      }
 
 
-let map_image_kind ~f = function
-  | Node -> Node
-  | TextNode _ as k -> k
-  | ImageNode spec -> ImageNode (f spec)
+    let make
+        ?(family = Revery.Font.Family.default)
+        ?(weight = Revery.Font.Weight.Normal)
+        ?(size = 12.)
+        ?(smoothing = Revery.Font.Smoothing.default)
+        ?(italicized = false)
+        ?(underlined = false)
+        ?(features = [])
+        ()
+      =
+      { family; weight; size; smoothing; italicized; underlined; features }
+  end
 
+  module Image = struct
+    type t =
+      { opacity : float
+      ; resize_mode : Revery.UI.ImageResizeMode.t
+      }
+
+    let default = { opacity = 1.; resize_mode = Revery.UI.ImageResizeMode.Stretch }
+
+    let make ?(opacity = 1.) ?(resize_mode = Revery.UI.ImageResizeMode.Stretch) () =
+      { opacity; resize_mode }
+  end
+
+  type t =
+    | Node
+    | TextNode of Text.t
+    | ImageNode of Image.t
+
+  let node = Node
+  let text s = TextNode s
+  let image s = ImageNode s
+
+  let update ~text ~image = function
+    | Node -> Node
+    | TextNode s -> TextNode (text s)
+    | ImageNode s -> ImageNode (image s)
+
+
+  let update_text t ~f = update t ~text:f ~image:Fn.id
+  let update_image t ~f = update t ~text:Fn.id ~image:f
+  let default_text = TextNode Text.default
+  let default_image = ImageNode Image.default
+end
 
 type t =
   | Empty
   | Native_event_handler of native_event
   | Custom_event_handler of custom_event
   | Style of UI.Style.t
-  | Kind of kind_spec
+  | Kind of KindSpec.t
   | Tab_index of int
 
 let sexp_of_t = sexp_of_opaque
 let default_custom_events = { on_left_click = None; on_right_click = None; on_any_click = None }
 
 type attributes =
-  { mutable style : UI.Style.t (* ; mutable font_info : font_info *)
-  ; mutable kind : kind_spec
+  { mutable style : UI.Style.t
+  ; mutable kind : KindSpec.t
   ; mutable native_events : UI.node UI.NodeEvents.t
   ; mutable custom_events : custom_events
   ; mutable tab_index : int option
   }
 [@@deriving fields]
 
-let default_font_family = Revery.Font.Family.default
 let default_style = UI.Style.defaultStyle
-
-let default_text_spec =
-  { family = default_font_family
-  ; weight = Revery.Font.Weight.Normal
-  ; size = 12.
-  ; smoothing = Revery.Font.Smoothing.default
-  ; italicized = false
-  ; underlined = false
-  }
-
-
-let default_text_kind = TextNode default_text_spec
-
-let make_text_kind
-    ?(family = default_font_family)
-    ?(weight = Revery.Font.Weight.Normal)
-    ?(size = 12.)
-    ?(smoothing = Revery.Font.Smoothing.default)
-    ?(italicized = false)
-    ?(underlined = false)
-    ()
-  =
-  TextNode { family; weight; size; smoothing; italicized; underlined }
-
 
 let make_attributes
     ?(style = default_style)
-    ?(kind = Node)
+    ?(kind = KindSpec.Node)
     ?(native_events = UI.NodeEvents.make ())
     ?tab_index
     ?(custom_events = default_custom_events)
@@ -146,7 +159,8 @@ let update_text_node attributes node =
           node#setFontWeight x.weight;
           node#setSmoothing x.smoothing;
           node#setItalicized x.italicized;
-          node#setUnderlined x.underlined
+          node#setUnderlined x.underlined;
+          node#setFeatures x.features
         | _ -> () );
       node)
 

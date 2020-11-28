@@ -29,22 +29,12 @@ end
 
 (** Element attributes accepted by {!Components} *)
 module Attr : sig
-  type kind_spec = Attributes.kind_spec
+  module KindSpec = Attributes.KindSpec
+
   type t = Attributes.t
 
   open Node_events
 
-  val make_text_kind
-    :  ?family:Revery.Font.Family.t
-    -> ?weight:Revery.Font.Weight.t
-    -> ?size:float
-    -> ?smoothing:Revery.Font.Smoothing.t
-    -> ?italicized:bool
-    -> ?underlined:bool
-    -> unit
-    -> kind_spec
-
-  val map_text_kind : f:(Attributes.text_spec -> Attributes.text_spec) -> kind_spec -> kind_spec
   val empty : t
   val node_ref : (UI.node -> Event.t) -> t
   val on_mouse_down : (Mouse_button.t -> Event.t) -> t
@@ -67,7 +57,7 @@ module Attr : sig
   val on_any_click : Event.t -> t
   val tab_index : int -> t
   val style : Style.t list -> t
-  val kind : Attributes.kind_spec -> t
+  val kind : Attributes.KindSpec.t -> t
 end =
   Attributes
 
