@@ -3,6 +3,46 @@ open Bonsai_revery
 open Bonsai_revery.Components
 open Bonsai.Infix
 
+module type EMOJI_CONFIG = sig
+  val emojis : (string, string, String.comparator_witness) Map.t
+  val box_style : Style.t list
+  val emoji_style : Style.t list
+end
+
+let make_emoji_config
+    ?(box_style = Style.[ flex_direction `Row; justify_content `FlexStart ])
+    ?(emoji_style = Style.[ width 30; height 30 ])
+    emojis
+  =
+  ( module struct
+    let emojis = emojis
+    let box_style = box_style
+    let emoji_style = emoji_style
+  end : EMOJI_CONFIG )
+
+
+module EmojiText (Config : EMOJI_CONFIG) = struct
+  open Config
+
+  let rgx = Str.regexp ":[a-z0-9_]+:"
+
+  let of_string text_attrs s =
+    let code_to_component code =
+      String.strip ~drop:(Char.equal ':') code
+      |> Map.find emojis
+      |> function
+        | Some path -> image Attr.[ style emoji_style ] path
+        | None -> text text_attrs code in
+    let split_result_to_component = function
+      | Str.Text s -> text text_attrs s
+      | Str.Delim s -> code_to_component s in
+    Str.full_split rgx s |> List.map ~f:split_result_to_component |> box Attr.[ style box_style ]
+end
+
+let emojis = [ "bonsai", "bonsai.png" ] |> Map.of_alist_exn (module String)
+
+module EmojiBox = EmojiText ((val make_emoji_config emojis))
+
 module Filter = struct
   type t =
     | All
@@ -144,9 +184,9 @@ module Components = struct
               ~width:1
               ~color:
                 ( match selected, hovered with
-                  | true, _ -> Theme.button_color
-                  | false, true -> Theme.hovered_button_color
-                  | false, false -> Colors.transparent_white )
+                | true, _ -> Theme.button_color
+                | false, true -> Theme.hovered_button_color
+                | false, false -> Colors.transparent_white )
           ; border_radius 2.
           ]
 
@@ -160,10 +200,10 @@ module Components = struct
     let view ~selected on_click title =
       button
         (fun ~hovered ->
-           [ Attr.style (List.append Styles.text (Styles.box ~selected ~hovered))
-           ; Attr.on_click on_click
-           ; Attr.kind Styles.font
-           ])
+          [ Attr.style (List.append Styles.text (Styles.box ~selected ~hovered))
+          ; Attr.on_click on_click
+          ; Attr.kind Styles.font
+          ])
         title
   end
 
@@ -231,8 +271,8 @@ module Components = struct
         Style.
           [ color
               ( match is_hovered with
-                | true -> Theme.danger_color
-                | false -> Colors.transparent_white )
+              | true -> Theme.danger_color
+              | false -> Colors.transparent_white )
           ; transform [ TranslateY 2. ]
           ; margin_right 6
           ]
@@ -245,13 +285,24 @@ module Components = struct
     end
 
     let view ~task:_ = box Attr.[ style Styles.box ] []
+    let emojis = [ "bonsai", "bonsai.png" ] |> Map.of_alist_exn (module String)
+
+    let remove_flex_grow =
+      List.filter ~f:(function
+        | `FlexGrow _ -> false
+        | _ -> true)
+
 
     let component =
       Bonsai.pure ~f:(fun ((key : int), (todo : Todo.t), (inject : Action.t -> Event.t)) ->
           box
             Attr.[ style Styles.box ]
             [ Checkbox.view ~checked:todo.completed ~on_toggle:(inject (Action.Toggle key))
-            ; text Attr.[ style (Styles.text todo.completed); kind Theme.font_info ] todo.title
+              (* ; text Attr.[ style (Styles.text todo.completed); kind Theme.font_info ] todo.title *)
+            ; EmojiBox.of_string
+                Attr.
+                  [ style (Styles.text todo.completed |> remove_flex_grow); kind Theme.font_info ]
+                todo.title
             ; box
                 Attr.[ on_click Event.no_op ]
                 [ text
@@ -300,7 +351,7 @@ module Components = struct
                 Attr.[ style (Styles.toggle_all all_completed); kind Styles.toggle_all_font ]
                 {||}
             ]
-          :: children )
+        :: children )
   end
 
   module Footer = struct
@@ -366,11 +417,11 @@ module Components = struct
 
         button
           (fun ~hovered ->
-             Attr.
-               [ on_click (inject Action.Clear_completed)
-               ; style (Styles.clear_completed hovered)
-               ; kind Styles.font
-               ])
+            Attr.
+              [ on_click (inject Action.Clear_completed)
+              ; style (Styles.clear_completed hovered)
+              ; kind Styles.font
+              ])
           text in
 
       box
@@ -396,10 +447,10 @@ let text_input =
         ~placeholder:"Add your Todo here!"
         ~autofocus:true
         ~on_key_down:(fun event value set_value ->
-            match event.key with
-            | Return when not (String.is_empty value) ->
-              Event.Many [ inject (Action.Add value); set_value "" ]
-            | _ -> Event.no_op)
+          match event.key with
+          | Return when not (String.is_empty value) ->
+            Event.Many [ inject (Action.Add value); set_value "" ]
+          | _ -> Event.no_op)
         Attr.[ kind Theme.font_info ])
   >>> Text_input.component
 
@@ -427,40 +478,40 @@ let state_component =
     [%here]
     ~default_model:Model.default
     ~apply_action:(fun ~inject:_ ~schedule_event:_ () model -> function
-        | Add title ->
-          let key =
-            match Map.max_elt model.todos with
-            | Some (key, _) -> key + 1
-            | None -> 0 in
-          let todos = Map.add_exn model.todos ~key ~data:{ title; completed = false } in
-          { model with todos }
-        | Toggle key ->
-          let todos = Map.change model.todos key ~f:(Option.map ~f:Todo.toggle) in
-          { model with todos }
-        | Remove key ->
-          let todos = Map.remove model.todos key in
-          { model with todos }
-        | Set_filter filter -> { model with filter }
-        | Toggle_all ->
-          let are_all_completed = Map.for_all model.todos ~f:Todo.completed in
-          let todos =
-            Map.map model.todos ~f:(fun todo -> { todo with completed = not are_all_completed }) in
-          { model with todos }
-        | Clear_completed ->
-          let todos = Map.filter model.todos ~f:(Fun.negate Todo.completed) in
-          { model with todos })
+      | Add title ->
+        let key =
+          match Map.max_elt model.todos with
+          | Some (key, _) -> key + 1
+          | None -> 0 in
+        let todos = Map.add_exn model.todos ~key ~data:{ title; completed = false } in
+        { model with todos }
+      | Toggle key ->
+        let todos = Map.change model.todos key ~f:(Option.map ~f:Todo.toggle) in
+        { model with todos }
+      | Remove key ->
+        let todos = Map.remove model.todos key in
+        { model with todos }
+      | Set_filter filter -> { model with filter }
+      | Toggle_all ->
+        let are_all_completed = Map.for_all model.todos ~f:Todo.completed in
+        let todos =
+          Map.map model.todos ~f:(fun todo -> { todo with completed = not are_all_completed }) in
+        { model with todos }
+      | Clear_completed ->
+        let todos = Map.filter model.todos ~f:(Fun.negate Todo.completed) in
+        { model with todos })
 
 
 let app : (unit, Element.t) Bonsai_revery.Bonsai.t =
   state_component
   >>> let%map.Bonsai todo_list = todo_list
-  and add_todo = add_todo
-  and footer = footer in
-  let title = text Attr.[ style Styles.title; kind Styles.title_font ] "todoMVC" in
-  let bonsai = image Attr.[ style Styles.bonsai ] Theme.bonsai_path in
-  let header =
-    box
-      Attr.[ style Style.[ justify_content `FlexStart; flex_direction `Row ] ]
-      [ bonsai; title ] in
+      and add_todo = add_todo
+      and footer = footer in
+      let title = text Attr.[ style Styles.title; kind Styles.title_font ] "todoMVC" in
+      let bonsai = image Attr.[ style Styles.bonsai ] Theme.bonsai_path in
+      let header =
+        box
+          Attr.[ style Style.[ justify_content `FlexStart; flex_direction `Row ] ]
+          [ bonsai; title ] in
 
-  box Attr.[ style Styles.app_container ] [ header; add_todo; todo_list; footer ]
+      box Attr.[ style Styles.app_container ] [ header; add_todo; todo_list; footer ]
