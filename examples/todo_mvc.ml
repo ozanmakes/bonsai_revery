@@ -245,13 +245,6 @@ module Components = struct
     end
 
     let view ~task:_ = box Attr.[ style Styles.box ] []
-    let emojis = [ "bonsai", "bonsai.png" ] |> Map.of_alist_exn (module String)
-
-    let remove_flex_grow =
-      List.filter ~f:(function
-        | `FlexGrow _ -> false
-        | _ -> true)
-
 
     let component =
       Bonsai.pure ~f:(fun ((key : int), (todo : Todo.t), (inject : Action.t -> Event.t)) ->
