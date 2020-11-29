@@ -4,7 +4,7 @@ open Bonsai_revery.Components
 open Bonsai.Infix
 
 module type EMOJI_CONFIG = sig
-  val emojis : (string, string, String.comparator_witness) Map.t
+  val emojis : (string, Attr.KindSpec.Image.source, String.comparator_witness) Map.t
   val box_style : Style.t list
   val emoji_style : Style.t list
 end
@@ -31,7 +31,8 @@ module EmojiText (Config : EMOJI_CONFIG) = struct
       String.strip ~drop:(Char.equal ':') code
       |> Map.find emojis
       |> function
-        | Some path -> image Attr.[ style emoji_style ] path
+        | Some source ->
+          image Attr.[ style emoji_style; kind KindSpec.(ImageNode (Image.make ~source ())) ]
         | None -> text text_attrs code in
     let split_result_to_component = function
       | Str.Text s -> text text_attrs s
@@ -39,7 +40,7 @@ module EmojiText (Config : EMOJI_CONFIG) = struct
     Str.full_split rgx s |> List.map ~f:split_result_to_component |> box Attr.[ style box_style ]
 end
 
-let emojis = [ "bonsai", "bonsai.png" ] |> Map.of_alist_exn (module String)
+let emojis = [ "bonsai", Attr.KindSpec.Image.File "bonsai.png" ] |> Map.of_alist_exn (module String)
 
 module EmojiBox = EmojiText ((val make_emoji_config emojis))
 
@@ -508,7 +509,12 @@ let app : (unit, Element.t) Bonsai_revery.Bonsai.t =
       and add_todo = add_todo
       and footer = footer in
       let title = text Attr.[ style Styles.title; kind Styles.title_font ] "todoMVC" in
-      let bonsai = image Attr.[ style Styles.bonsai ] Theme.bonsai_path in
+      let bonsai =
+        image
+          Attr.
+            [ style Styles.bonsai
+            ; kind KindSpec.(ImageNode (Image.make ~source:(Image.File Theme.bonsai_path) ()))
+            ] in
       let header =
         box
           Attr.[ style Style.[ justify_content `FlexStart; flex_direction `Row ] ]
