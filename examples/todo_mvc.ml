@@ -3,47 +3,6 @@ open Bonsai_revery
 open Bonsai_revery.Components
 open Bonsai.Infix
 
-module type EMOJI_CONFIG = sig
-  val emojis : (string, Attr.KindSpec.Image.source, String.comparator_witness) Map.t
-  val box_style : Style.t list
-  val emoji_style : Style.t list
-end
-
-let make_emoji_config
-    ?(box_style = Style.[ flex_direction `Row; justify_content `FlexStart ])
-    ?(emoji_style = Style.[ width 30; height 30 ])
-    emojis
-  =
-  ( module struct
-    let emojis = emojis
-    let box_style = box_style
-    let emoji_style = emoji_style
-  end : EMOJI_CONFIG )
-
-
-module EmojiText (Config : EMOJI_CONFIG) = struct
-  open Config
-
-  let rgx = Str.regexp ":[a-z0-9_]+:"
-
-  let of_string text_attrs s =
-    let code_to_component code =
-      String.strip ~drop:(Char.equal ':') code
-      |> Map.find emojis
-      |> function
-        | Some source ->
-          image Attr.[ style emoji_style; kind KindSpec.(ImageNode (Image.make ~source ())) ]
-        | None -> text text_attrs code in
-    let split_result_to_component = function
-      | Str.Text s -> text text_attrs s
-      | Str.Delim s -> code_to_component s in
-    Str.full_split rgx s |> List.map ~f:split_result_to_component |> box Attr.[ style box_style ]
-end
-
-let emojis = [ "bonsai", Attr.KindSpec.Image.File "bonsai.png" ] |> Map.of_alist_exn (module String)
-
-module EmojiBox = EmojiText ((val make_emoji_config emojis))
-
 module Filter = struct
   type t =
     | All
@@ -299,11 +258,7 @@ module Components = struct
           box
             Attr.[ style Styles.box ]
             [ Checkbox.view ~checked:todo.completed ~on_toggle:(inject (Action.Toggle key))
-              (* ; text Attr.[ style (Styles.text todo.completed); kind Theme.font_info ] todo.title *)
-            ; EmojiBox.of_string
-                Attr.
-                  [ style (Styles.text todo.completed |> remove_flex_grow); kind Theme.font_info ]
-                todo.title
+            ; text Attr.[ style (Styles.text todo.completed); kind Theme.font_info ] todo.title
             ; box
                 Attr.[ on_click Event.no_op ]
                 [ text
