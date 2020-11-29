@@ -68,7 +68,7 @@ module Style = Style
 module Components : sig
   val box : Attr.t list -> Element.t list -> Element.t
   val text : Attr.t list -> string -> Element.t
-  val image : Attr.t list -> string -> Element.t
+  val image : Attr.t list -> Element.t
   val opacity : ?opacity:float -> Element.t list -> Element.t
   val tick : Element.t -> every:Core_kernel.Time.Span.t -> Element.t
 

@@ -63,9 +63,9 @@ let clickable_box' =
                attributes.Attr.custom_events.on_any_click
                ::
                ( match mouse_evt.button with
-                 | Revery.MouseButton.BUTTON_LEFT -> [ attributes.custom_events.on_left_click ]
-                 | Revery.MouseButton.BUTTON_RIGHT -> [ attributes.custom_events.on_right_click ]
-                 | _ -> [] ) in
+               | Revery.MouseButton.BUTTON_LEFT -> [ attributes.custom_events.on_left_click ]
+               | Revery.MouseButton.BUTTON_RIGHT -> [ attributes.custom_events.on_right_click ]
+               | _ -> [] ) in
 
              Event.Many (List.filter_map events ~f:Fn.id) )
            else Event.no_op in
@@ -75,32 +75,32 @@ let clickable_box' =
          let user_on_mouse_up = attributes.native_events.onMouseUp in
 
          attributes.native_events
-         <- { attributes.native_events with
-              onMouseLeave =
-                Some
-                  (fun e ->
-                     release_capture ();
+           <- { attributes.native_events with
+                onMouseLeave =
+                  Some
+                    (fun e ->
+                      release_capture ();
 
-                     Option.iter user_on_mouse_leave ~f:(fun f -> f e))
-            ; onMouseDown =
-                Some
-                  (fun e ->
-                     capture ();
+                      Option.iter user_on_mouse_leave ~f:(fun f -> f e))
+              ; onMouseDown =
+                  Some
+                    (fun e ->
+                      capture ();
 
-                     Option.iter user_on_mouse_down ~f:(fun f -> f e))
-            ; onMouseUp =
-                Some
-                  (fun e ->
-                     Option.iter user_on_mouse_up ~f:(fun f -> f e);
+                      Option.iter user_on_mouse_down ~f:(fun f -> f e))
+              ; onMouseUp =
+                  Some
+                    (fun e ->
+                      Option.iter user_on_mouse_up ~f:(fun f -> f e);
 
-                     on_mouse_up e |> Event.Expert.handle)
-            };
+                      on_mouse_up e |> Event.Expert.handle)
+              };
 
          attributes.style
-         <- { attributes.style with
-              cursor =
-                Option.first_some attributes.style.cursor (Some Revery.MouseCursors.pointer)
-            }
+           <- { attributes.style with
+                cursor =
+                  Option.first_some attributes.style.cursor (Some Revery.MouseCursors.pointer)
+              }
        end;
 
        native_box attributes children)
@@ -166,9 +166,9 @@ let text' ~use_dynamic_key name =
         ( { make = (fun () -> Obj.magic (Attr.update_text_node attributes textNode))
           ; configureInstance =
               (fun ~isFirstRender:_ node ->
-                 let text_node : Revery_UI.textNode = Obj.magic node in
-                 text_node#setText text;
-                 Obj.magic (Attr.update_text_node attributes text_node))
+                let text_node : Revery_UI.textNode = Obj.magic node in
+                text_node#setText text;
+                Obj.magic (Attr.update_text_node attributes text_node))
           ; children = UI.React.empty
           ; insertNode
           ; deleteNode
@@ -187,19 +187,15 @@ let text =
 let image' ~use_dynamic_key name =
   let component = UI.React.Expert.nativeComponent ~useDynamicKey:use_dynamic_key name in
 
-  fun ?(key : int option) attributes path ->
+  fun ?(key : int option) attributes ->
     let key : UI.React.Key.t option = Obj.magic key in
     component ?key (fun hooks ->
-        let imageNode =
-          Revery_IO.Image.fromAssetPath path
-          |> (Revery_UI_Primitives.PrimitiveNodeFactory.get ()).createImageNode in
+        let imageNode = (Revery_UI_Primitives.PrimitiveNodeFactory.get ()).createImageNode None in
         let open UI.React in
         ( { make = (fun () -> Obj.magic (Attr.update_image_node attributes imageNode))
           ; configureInstance =
               (fun ~isFirstRender:_ node ->
-                 let image_node : Revery_UI.imageNode = Obj.magic node in
-                 Revery_IO.Image.fromAssetPath path |> image_node#setData;
-                 Obj.magic (Attr.update_image_node attributes image_node))
+                Obj.magic (Attr.update_image_node attributes (Obj.magic node)))
           ; children = UI.React.empty
           ; insertNode
           ; deleteNode
@@ -210,9 +206,9 @@ let image' ~use_dynamic_key name =
 
 let image =
   let image' = image' ~use_dynamic_key:false (Source_code_position.to_string [%here]) ?key:None in
-  fun attribute_list path ->
+  fun attribute_list ->
     let attributes = Attr.make attribute_list in
-    image' attributes path
+    image' attributes
 
 
 let opacity =
@@ -242,12 +238,12 @@ let tick =
     | [] -> ticker.clear_active_interval <- empty_interval
     | interval :: _ ->
       ticker.clear_active_interval
-      <- Revery.Tick.interval
-          ~name:"tick stabilize"
-          (fun _ ->
-             Incr.Clock.advance_clock Incr.clock ~to_:(Time_ns.now ());
-             Timber.Log.perf "tick stabilize" Incr.stabilize)
-          (Revery.Time.ofFloatSeconds (Time.Span.to_sec interval)) in
+        <- Revery.Tick.interval
+             ~name:"tick stabilize"
+             (fun _ ->
+               Incr.Clock.advance_clock Incr.clock ~to_:(Time_ns.now ());
+               Timber.Log.perf "tick stabilize" Incr.stabilize)
+             (Revery.Time.ofFloatSeconds (Time.Span.to_sec interval)) in
 
   let add_interval interval =
     let restart =
@@ -283,9 +279,9 @@ let tick =
          UI.React.Hooks.effect
            (OnMountAndIf ((fun a b -> Time.Span.(a <> b)), every))
            (fun () ->
-              add_interval every;
+             add_interval every;
 
-              Some (fun () -> remove_interval every)) in
+             Some (fun () -> remove_interval every)) in
 
        node)
 
@@ -295,8 +291,8 @@ let compose_event_handler ~f = function
   | Some e ->
     Some
       (fun x ->
-         f x;
-         e x)
+        f x;
+        e x)
 
 
 let button =
@@ -320,7 +316,7 @@ let button =
          compose_event_handler attributes.native_events.onMouseOut ~f:(fun _ ->
              set_hovered (fun _ -> false)) in
        attributes.native_events
-       <- { attributes.native_events with onMouseOver = on_mouse_over; onMouseOut = on_mouse_out };
+         <- { attributes.native_events with onMouseOver = on_mouse_over; onMouseOut = on_mouse_out };
 
        let text_attributes =
          let style = attributes.style in
@@ -496,21 +492,21 @@ module Text_input = struct
         let offset = textWidth - !scroll_offset in
         tick ~every:(if model.focused then Time.Span.of_ms 16.0 else Time.Span.of_hr 1.0)
         @@ box
-          Attr.[ style (Styles.cursor ~offset) ]
-          [ opacity
-              ~opacity:(if model.focused && cursor_on then 1.0 else 0.0)
-              [ box
-                  Attr.
-                    [ style
-                        Style.
-                          [ width Constants.cursorWidth
-                          ; height (Float.to_int font_info.size)
-                          ; background_color input.cursor_color
-                          ]
-                    ]
-                  []
-              ]
-          ] in
+             Attr.[ style (Styles.cursor ~offset) ]
+             [ opacity
+                 ~opacity:(if model.focused && cursor_on then 1.0 else 0.0)
+                 [ box
+                     Attr.
+                       [ style
+                           Style.
+                             [ width Constants.cursorWidth
+                             ; height (Float.to_int font_info.size)
+                             ; background_color input.cursor_color
+                             ]
+                       ]
+                     []
+                 ]
+             ] in
 
       let attributes =
         Attr.(
@@ -526,9 +522,9 @@ module Text_input = struct
         |> Attr.make ~default_style ~default_kind in
 
       attributes.style
-      <- { attributes.style with
-           cursor = Option.first_some attributes.style.cursor (Some Revery.MouseCursors.text)
-         };
+        <- { attributes.style with
+             cursor = Option.first_some attributes.style.cursor (Some Revery.MouseCursors.text)
+           };
 
       let view =
         clickable_box
@@ -603,7 +599,7 @@ module Text_input = struct
         ~cutoff:
           (Incr.Cutoff.create
              (fun ~old_value:(old_timer, old_input) ~new_value:(new_timer, new_input) ->
-                Bool.equal old_timer new_timer && phys_equal old_input new_input)) in
+               Bool.equal old_timer new_timer && phys_equal old_input new_input)) in
 
     ignore @>> cursor_on |> Bonsai.Arrow.extend_first >>> cutoff >>> component
 end
