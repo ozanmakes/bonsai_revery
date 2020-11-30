@@ -327,7 +327,7 @@ let button =
              ~textOverflow:style.textOverflow
              ~color:style.color
              () in
-         Attr.make_attributes ~style () in
+         Attr.make_attributes ~style ~kind:attributes.kind () in
 
        clickable_box ~disabled attributes (text text_attributes title))
 
