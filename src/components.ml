@@ -67,12 +67,13 @@ let clickable_box' =
                | Revery.MouseButton.BUTTON_RIGHT -> [ attributes.custom_events.on_right_click ]
                | _ -> [] ) in
 
-             Event.Many (List.filter_map events ~f:Fn.id) )
+             Event.Many (List.filter_opt events) )
            else Event.no_op in
 
          let user_on_mouse_leave = attributes.native_events.onMouseLeave in
          let user_on_mouse_down = attributes.native_events.onMouseDown in
          let user_on_mouse_up = attributes.native_events.onMouseUp in
+         let user_on_mouse_wheel = attributes.native_events.onMouseWheel in
 
          attributes.native_events
            <- { attributes.native_events with
@@ -94,6 +95,12 @@ let clickable_box' =
                       Option.iter user_on_mouse_up ~f:(fun f -> f e);
 
                       on_mouse_up e |> Event.Expert.handle)
+              ; onMouseWheel =
+                  Some
+                    (fun e ->
+                      capture ();
+
+                      Option.iter user_on_mouse_wheel ~f:(fun f -> f e))
               };
 
          attributes.style
@@ -602,4 +609,667 @@ module Text_input = struct
                Bool.equal old_timer new_timer && phys_equal old_input new_input)) in
 
     ignore @>> cursor_on |> Bonsai.Arrow.extend_first >>> cutoff >>> component
+end
+
+module Resizable = struct
+  type resize =
+    [ `Scale of float option * float option
+    | `Set of int option * int option
+    ]
+  [@@deriving sexp_of]
+
+  type props =
+    { styles : (Style.t[@sexp.opaque]) list
+    ; attributes : Attr.t list
+    ; max_width : int option
+    ; max_height : int option
+    }
+  [@@deriving sexp_of]
+
+  let props ?(attributes = []) ?max_width ?max_height styles =
+    { styles; attributes; max_width; max_height }
+
+
+  module T = struct
+    module Model = struct
+      type t =
+        { set_width : int option
+        ; set_height : int option
+        ; start_width : int option
+        ; start_height : int option
+        }
+      [@@deriving equal, sexp]
+
+      let default = { set_width = None; set_height = None; start_width = None; start_height = None }
+    end
+
+    module Action = struct
+      type t =
+        | Resize of resize
+        | OriginalDimensions of (int * int)
+      [@@deriving sexp_of]
+    end
+
+    module Input = struct
+      type t = Element.t * props
+    end
+
+    open Action
+
+    module Result = struct
+      type t = (resize -> Event.t) * Element.t
+    end
+
+    let name = "Resizable"
+
+    let compute ~inject ((child, props) : Input.t) (model : Model.t) =
+      let resize r = inject (Resize r) in
+      let handle_dimensions_changed ({ width; height } : Node_events.Dimensions_changed.t) =
+        inject (OriginalDimensions (width, height)) in
+      let changed =
+        List.filter_opt
+          Style.[ Option.map ~f:width model.set_width; Option.map ~f:height model.set_height ] in
+      let element =
+        box
+          Attr.(
+            style (props.styles @ changed)
+            :: on_dimensions_changed handle_dimensions_changed
+            :: props.attributes)
+          [ child ] in
+      resize, element
+
+
+    let apply_action ~inject:_ ~schedule_event:_ _ (model : Model.t) = function
+      | OriginalDimensions (w, h) ->
+        if Option.is_none model.start_width
+        then { model with start_width = Some w; start_height = Some h }
+        else model
+      | Resize (`Set (w_opt, h_opt)) ->
+        ( match w_opt, h_opt with
+        | (Some _ as w), (Some _ as h) -> { model with set_width = w; set_height = h }
+        | (Some _ as w), None -> { model with set_width = w }
+        | None, (Some _ as h) -> { model with set_height = h }
+        | None, None -> model )
+      | Resize (`Scale (w_mul_opt, h_mul_opt)) ->
+        ( match model.start_width, model.start_height with
+        | Some w0, Some h0 ->
+          let w0 = Float.of_int w0 in
+          let h0 = Float.of_int h0 in
+          ( match w_mul_opt, h_mul_opt with
+          | Some w_mul, Some h_mul ->
+            { model with
+              set_width = Some (Int.of_float (w_mul *. w0))
+            ; set_height = Some (Int.of_float (h_mul *. h0))
+            }
+          | Some w_mul, None -> { model with set_width = Some (Int.of_float (w_mul *. w0)) }
+          | None, Some h_mul -> { model with set_height = Some (Int.of_float (h_mul *. h0)) }
+          | None, None -> model )
+        | _ -> model )
+  end
+
+  let component = Bonsai.of_module (module T) ~default_model:T.Model.default
+end
+
+module Draggable = struct
+  (* NOTE: See Set_input_node and Set_text_node and using the node_red callback usage in Text_input
+     in order to get the actual nodes that underlie the elements (to get measurements from etc). *)
+
+  (* NOTE: Might consider adding an an attribute to govern whether a box gives up capture when the
+     mouse leaves it's area while the mouse button is down. It doesn't feel great when trying to
+     move a slider when capture is lost. UPDATE: Tried to prevent capture loss by removing it from
+     the clickable_box on leave callbacks and was unsuccessful. What would actually need to change? *)
+  type freedom =
+    | X
+    | Y
+    | Free
+  [@@deriving sexp_of]
+
+  type props =
+    { styles : (Style.t[@sexp.opaque]) list
+    ; attributes : Attr.t list
+    ; freedom : freedom
+    ; snap_back : bool
+    ; on_drag : x:float -> y:float -> Event.t
+    ; on_drop : BoundingBox2d.t -> Event.t
+    }
+  [@@deriving sexp_of]
+
+  let props
+      ?(attributes = [])
+      ?(freedom = Free)
+      ?(snap_back = false)
+      ?(on_drag = fun ~x:_ ~y:_ -> Event.no_op)
+      ?(on_drop = fun _ -> Event.no_op)
+      styles
+    =
+    { styles; attributes; freedom; snap_back; on_drag; on_drop }
+
+
+  module T = struct
+    module Model = struct
+      type t =
+        { start : (float * float) option
+        ; x_trans : float
+        ; y_trans : float
+        ; inner_box : (BoundingBox2d.t[@sexp.opaque])
+        ; outer_box : (BoundingBox2d.t[@sexp.opaque]) option
+        }
+      [@@deriving equal, sexp]
+
+      let default =
+        { start = None
+        ; x_trans = 0.
+        ; y_trans = 0.
+        ; inner_box = BoundingBox2d.create 0. 0. 1. 1.
+        ; outer_box = None
+        }
+    end
+
+    module Action = struct
+      type t =
+        | Grab of float * float
+        | Drop
+        | Drag of float * float
+        | Shift of freedom * float * float
+        | Reset
+        | InnerBox of (BoundingBox2d.t[@sexp.opaque])
+        | OuterBox of (BoundingBox2d.t[@sexp.opaque])
+      [@@deriving sexp_of]
+    end
+
+    module Input = struct
+      type t = Element.t * props
+    end
+
+    open Action
+
+    module Result = struct
+      type t =
+        BoundingBox2d.t * (BoundingBox2d.t -> Event.t) * (float -> float -> Event.t) * Element.t
+    end
+
+    let name = "Draggable"
+
+    let allowable_movement inner outer =
+      let i_l, i_t, i_r, i_b = BoundingBox2d.get_bounds inner in
+      let o_l, o_t, o_r, o_b = BoundingBox2d.get_bounds outer in
+      let min_x = o_l -. i_l in
+      let max_x = o_r -. i_r in
+      let min_y = o_t -. i_t in
+      let max_y = o_b -. i_b in
+      min_x, min_y, max_x, max_y
+
+
+    let boundless = Float.(-.max_value, -.max_value, max_value, max_value)
+
+    let shift freedom bb boundary x0 y0 x1 y1 =
+      let min_x, min_y, max_x, max_y =
+        Option.value_map ~default:boundless ~f:(allowable_movement bb) boundary in
+      match freedom with
+      | Free ->
+        ( Float.clamp_exn (x1 -. x0) ~min:min_x ~max:max_x
+        , Float.clamp_exn (y1 -. y0) ~min:min_y ~max:max_y )
+      | X -> Float.clamp_exn (x1 -. x0) ~min:min_x ~max:max_x, 0.
+      | Y -> 0., Float.clamp_exn (y1 -. y0) ~min:min_y ~max:max_y
+
+
+    let compute ~inject ((child, props) : Input.t) (model : Model.t) =
+      let handle_mouse_down ({ button; mouseX; mouseY; _ } : Node_events.Mouse_button.t) =
+        match button with
+        | BUTTON_LEFT -> inject (Grab (mouseX, mouseY))
+        | _ -> Event.no_op in
+      let handle_mouse_up ({ button; _ } : Node_events.Mouse_button.t) =
+        Event.Many
+          ( match button with
+          | BUTTON_LEFT ->
+            inject Drop
+            :: props.on_drop model.inner_box
+            :: (if props.snap_back then [ inject Reset ] else [])
+          | BUTTON_RIGHT -> [ inject Reset ]
+          | _ -> [ Event.no_op ] ) in
+      let handle_mouse_move ({ mouseX = x1; mouseY = y1; _ } : Node_events.Mouse_move.t) =
+        Event.Many
+          ( match model.start with
+          | Some (x0, y0) ->
+            let x_shift, y_shift =
+              shift
+                props.freedom
+                model.inner_box
+                model.outer_box
+                (x0 +. model.x_trans)
+                (y0 +. model.y_trans)
+                x1
+                y1 in
+            let x = x_shift +. model.x_trans in
+            let y = y_shift +. model.y_trans in
+            [ inject (Drag (x, y)); props.on_drag ~x ~y ]
+          | None -> [ Event.no_op ] ) in
+      let handle_bounding_box_change bb = inject (InnerBox bb) in
+      let trans = Style.(transform [ TranslateX model.x_trans; TranslateY model.y_trans ]) in
+
+      let shift_callback x y = inject (Shift (props.freedom, x, y)) in
+      let set_bounds bb = inject (OuterBox bb) in
+      let element =
+        box
+          Attr.(
+            on_mouse_down handle_mouse_down
+            :: on_mouse_up handle_mouse_up
+            :: on_mouse_move handle_mouse_move
+            :: on_bounding_box_changed handle_bounding_box_change
+            :: style (trans :: props.styles)
+            :: props.attributes)
+          [ child ] in
+      model.inner_box, set_bounds, shift_callback, element
+
+
+    let apply_action ~inject:_ ~schedule_event:_ _ (model : Model.t) = function
+      | Grab (x, y) -> { model with start = Some (x -. model.x_trans, y -. model.y_trans) }
+      | Drop -> { model with start = None }
+      | Drag (x, y) -> { model with x_trans = x; y_trans = y }
+      | Shift (freedom, x, y) ->
+        let x0, y0 =
+          match model.start with
+          | Some (x, y) -> x, y
+          | None ->
+            let l, t, r, b = BoundingBox2d.get_bounds model.inner_box in
+            (l +. r) /. 2., (t +. b) /. 2. in
+        let x_pos = y0 +. model.x_trans in
+        let y_pos = y0 +. model.y_trans in
+        let shift_x, shift_y =
+          shift freedom model.inner_box model.outer_box x_pos y_pos (x_pos +. x) (y_pos +. y) in
+        { model with x_trans = shift_x +. model.x_trans; y_trans = shift_y +. model.y_trans }
+      | Reset -> { model with x_trans = 0.; y_trans = 0. }
+      | InnerBox bb -> { model with inner_box = bb }
+      | OuterBox bb -> { model with outer_box = Some bb }
+  end
+
+  let component = Bonsai.of_module (module T) ~default_model:T.Model.default
+end
+
+module Slider = struct
+  type length =
+    | Dynamic of int
+    | Static of int
+  [@@deriving sexp_of]
+
+  let length_val = function
+    | Dynamic v -> v
+    | Static v -> v
+
+
+  let length_to_styles vertical thickness = function
+    | Static i ->
+      Style.
+        [ width (if vertical then thickness else i); height (if vertical then i else thickness) ]
+    | Dynamic i ->
+      if vertical
+      then Style.[ width thickness; max_height i; flex_direction `Column ]
+      else Style.[ height thickness; max_width i; flex_direction `Row ]
+
+
+  type props =
+    { on_value_changed : float -> Event.t
+    ; vertical : bool
+    ; min_value : float
+    ; max_value : float
+    ; init_value : float
+    ; slider_length : length
+    ; track_thickness : int
+    ; track_color : (Color.t[@sexp.opaque])
+    ; thumb : (Draggable.props[@sexp.opaque])
+    }
+  [@@deriving sexp_of]
+
+  let props
+      ?(on_value_changed = fun _ -> Event.no_op)
+      ?(vertical = true)
+      ?(min_value = 0.)
+      ?(max_value = 1.)
+      ?(init_value = 0.)
+      ?(slider_length = Static 100)
+      ?(thumb_length = Static 15)
+      ?(thumb_thickness = 15)
+      ?(track_thickness = 15)
+      ?(track_color = Colors.dark_gray)
+      ?(thumb_color = Colors.gray)
+      ()
+    =
+    let thumb =
+      Draggable.props
+        ~snap_back:false
+        ~freedom:(if vertical then Y else X)
+        Style.(
+          background_color thumb_color :: length_to_styles vertical thumb_thickness thumb_length)
+    in
+    { on_value_changed
+    ; vertical
+    ; min_value
+    ; max_value
+    ; init_value
+    ; slider_length
+    ; track_thickness
+    ; track_color
+    ; thumb
+    }
+
+
+  module T = struct
+    module Model = struct
+      type t =
+        { value : float option
+        ; bounding_box : (BoundingBox2d.t[@sexp.opaque]) option
+        }
+      [@@deriving equal, sexp]
+
+      let default = { value = None; bounding_box = None }
+    end
+
+    module Action = struct
+      type t = SetBoundingBox of (BoundingBox2d.t[@sexp.opaque]) [@@deriving sexp_of]
+    end
+
+    module Input = struct
+      type t =
+        BoundingBox2d.t
+        * (BoundingBox2d.t -> Event.t)
+        * (float -> float -> Event.t)
+        * Element.t
+        * props
+    end
+
+    open Action
+
+    module Result = struct
+      type t = float * Element.t
+    end
+
+    let name = "Slider"
+
+    let compute ~inject ((bar_bb, set_bar_bb, shift_bar, bar, props) : Input.t) (model : Model.t) =
+      let handle_bounding_box_change bb = Event.Many [ inject (SetBoundingBox bb); set_bar_bb bb ] in
+      let value =
+        Option.value_map model.bounding_box ~default:props.init_value ~f:(fun bb ->
+            let s_l, s_t, s_r, s_b = BoundingBox2d.get_bounds bb in
+            let b_l, b_t, b_r, b_b = BoundingBox2d.get_bounds bar_bb in
+            ( if props.vertical
+            then (s_t -. b_t) /. (s_t -. s_b -. b_t +. b_b +. 0.000001)
+            else (s_l -. b_l) /. (s_l -. s_r -. b_l +. b_r +. 0.000001) )
+            |> fun v -> (v *. (props.max_value -. props.min_value)) +. props.min_value) in
+      let styles =
+        let open Style in
+        background_color props.track_color
+        :: length_to_styles props.vertical props.track_thickness props.slider_length in
+      let element =
+        box Attr.[ on_bounding_box_changed handle_bounding_box_change; style styles ] [ bar ] in
+      value, element
+
+
+    let apply_action ~inject:_ ~schedule_event:_ _ (model : Model.t) = function
+      | SetBoundingBox bb -> { model with bounding_box = Some bb }
+  end
+
+  let component =
+    Bonsai.pure ~f:(fun (props : props) -> text [] "", props.thumb)
+    >>> Draggable.component
+    |> Bonsai.Arrow.extend_first
+    |> Bonsai.map ~f:(fun ((bb, set_bounds, shift, draggable), props) ->
+           bb, set_bounds, shift, draggable, props)
+    >>> Bonsai.of_module (module T) ~default_model:T.Model.default
+
+
+  let with_thumb = Bonsai.of_module (module T) ~default_model:T.Model.default
+end
+
+module ScrollView = struct
+  type props =
+    { speed : float
+    ; styles : (Style.t[@sexp.opaque]) list
+    ; attributes : Attr.t list
+    ; x_slider : Slider.props
+    ; y_slider : Slider.props
+    }
+  [@@deriving sexp_of]
+
+  let props ?(speed = 25.) ?(attributes = []) ?track_color ?thumb_color styles =
+    let common = Slider.props ?track_color ?thumb_color in
+    let x_length =
+      Slider.Dynamic
+        ( List.find_map styles ~f:(function
+            | `MaxWidth w -> Some w
+            | _ -> None)
+        |> Option.value ~default:Int.max_value ) in
+    let y_length =
+      Slider.Dynamic
+        ( List.find_map styles ~f:(function
+            | `MaxHeight h -> Some h
+            | _ -> None)
+        |> Option.value ~default:Int.max_value ) in
+    let x_slider = common ~vertical:false ~slider_length:x_length ~thumb_length:x_length () in
+    let y_slider = common ~vertical:true ~slider_length:y_length ~thumb_length:y_length () in
+    { speed; styles; attributes; x_slider; y_slider }
+
+
+  let is_mac =
+    Revery.Environment.(
+      match os with
+      | Mac -> true
+      | _ -> false)
+
+
+  let horizonal_scroll_multiplier = if is_mac then -1. else 1.
+
+  (* Default is column flex. *)
+  let is_columnar : Style.t list -> bool =
+    List.for_all ~f:(function
+      | `FlexDirection (d : Style.flex_direction) ->
+        ( match d with
+        | Column | ColumnReverse -> true
+        | _ -> false )
+      | _ -> true)
+
+
+  module T = struct
+    module Model = struct
+      type t =
+        { x_pos : float
+        ; y_pos : float
+        ; outer_width : int
+        ; outer_height : int
+        ; inner_width : int
+        ; inner_height : int
+        ; scroll_width : float
+        ; scroll_height : float
+        ; child_count : int
+        ; child_dims : (int * int) Map.M(Int).t
+        }
+      [@@deriving equal, sexp]
+
+      let default =
+        { x_pos = 0.
+        ; y_pos = 0.
+        ; outer_width = 0
+        ; outer_height = 0
+        ; inner_width = 0
+        ; inner_height = 0
+        ; scroll_width = 0.
+        ; scroll_height = 0.
+        ; child_count = 0
+        ; child_dims = Map.empty (module Int)
+        }
+    end
+
+    module Action = struct
+      type t =
+        | Scroll of float * float
+        | OuterDimensions of int * int
+        | Scrollable of float * float
+        | Count of int
+        | ChildDimensions of int * int * int
+        | TrimChildren of Set.M(Int).t
+      [@@deriving sexp_of]
+    end
+
+    module Input = struct
+      type control = float * float
+
+      type slider =
+        { element : Element.t
+        ; resize : Resizable.resize -> Event.t
+        ; shift : float -> float -> Event.t
+        }
+
+      type sliders =
+        { x : slider
+        ; y : slider
+        }
+
+      type t = control * sliders * Element.t Map.M(Int).t * props
+    end
+
+    open Action
+    module Result = Element
+
+    let name = "ScrollView"
+
+    (* Sum over the major dimension, max over the minor dimension. *)
+    let calculate_totals columnar dims =
+      let w_fun, h_fun = if columnar then Int.max, ( + ) else ( + ), Int.max in
+      let f ~key:_ ~data:(w, h) (w_acc, h_acc) = w_fun w_acc w, h_fun h_acc h in
+      dims |> Map.fold ~init:(0, 0) ~f
+
+
+    let excess total limit = Float.(of_int Int.(total - limit) |> clamp_exn ~min:0. ~max:max_value)
+
+    let scrollable columnar width height child_dims =
+      let children_width, children_height = calculate_totals columnar child_dims in
+      excess children_width width, excess children_height height
+
+
+    let compute ~inject ((control, sliders, children, props) : Input.t) (model : Model.t) =
+      let scroll_width, scroll_height =
+        scrollable (is_columnar props.styles) model.outer_width model.outer_height model.child_dims
+      in
+      let () =
+        (* NOTE: I'm wary of using Expert.handle, and I could conceivably have these fired along
+           with when child dimensions change, but then the bundled events would go off once for
+           every child (since they all fire dimensions changed events any time one is added or
+           removed). *)
+        let count = Map.length children in
+        if count <> model.child_count
+        then
+          Event.Many
+            [ inject (Count count)
+            ; ( if count < model.child_count
+              then inject (TrimChildren (Map.key_set children))
+              else Event.no_op )
+            ]
+          |> Event.Expert.handle;
+
+        if Float.(model.scroll_width <> scroll_width || model.scroll_height <> scroll_height)
+        then (
+          let h = model.outer_height - Int.of_float scroll_height in
+          let w = model.outer_width - Int.of_float scroll_width in
+          Event.Many
+            [ inject (Scrollable (scroll_width, scroll_height))
+            ; sliders.y.resize (`Set (None, Some h))
+            ; sliders.x.resize (`Set (Some w, None))
+            ]
+          |> Event.Expert.handle ) in
+
+      let handle_wheel ({ shiftKey; deltaY; _ } : Node_events.Mouse_wheel.t) =
+        let delta = deltaY *. props.speed in
+        match Float.(abs delta > 0.), shiftKey with
+        | true, false -> sliders.y.shift 0. delta
+        | true, true -> sliders.x.shift (delta *. horizonal_scroll_multiplier) 0.
+        | _ -> Event.no_op in
+      let outer_dimension_change ({ width; height } : Node_events.Dimensions_changed.t) =
+        inject (OuterDimensions (width, height)) in
+
+      let trans_x = fst control *. scroll_width in
+      let trans_y = snd control *. scroll_height in
+      let trans key =
+        Attr.
+          [ style Style.[ transform [ TranslateX (-1. *. trans_x); TranslateY (-1. *. trans_y) ] ]
+          ; on_dimensions_changed (fun { width; height } ->
+                inject (ChildDimensions (key, width, height)))
+          ] in
+
+      let view =
+        box
+          Attr.(
+            on_mouse_wheel handle_wheel
+            :: on_dimensions_changed outer_dimension_change
+            :: style props.styles
+            :: props.attributes)
+          (Map.mapi ~f:(fun ~key ~data -> box (trans key) [ data ]) children |> Map.data) in
+
+      (* NOTE: Having some trouble deciding how to most cleanly / generally deal with the problem of
+         inheriting the correct style properties and attributes given to ScrollView. For instance,
+         flex_grow. Should the lists be filtered, or should overrides be tacked on like below? *)
+      let inner_box =
+        let styles = Style.(flex_direction `Row :: margin_bottom 2 :: props.styles |> List.rev) in
+        let elements = view :: (if Float.(scroll_height > 0.) then [ sliders.y.element ] else []) in
+        box Attr.[ style styles ] elements in
+      if Float.(scroll_width > 0.)
+      then box Attr.[ style props.styles ] [ inner_box; sliders.x.element ]
+      else inner_box
+
+
+    let apply_action ~inject:_ ~schedule_event:_ _ (model : Model.t) = function
+      | Scroll (x_pos, y_pos) -> { model with x_pos; y_pos }
+      | OuterDimensions (w, h) -> { model with outer_width = w; outer_height = h }
+      | Count n -> { model with child_count = n }
+      | ChildDimensions (key, w, h) ->
+        Log.perf "child dims" (fun () -> ());
+        { model with child_dims = Map.set model.child_dims ~key ~data:(w, h) }
+      | TrimChildren keys ->
+        { model with child_dims = Map.filter_keys model.child_dims ~f:(Set.mem keys) }
+      | Scrollable (w, h) -> { model with scroll_width = w; scroll_height = h }
+  end
+
+  let slider_props ax props =
+    match ax with
+    | `X -> props.x_slider
+    | `Y -> props.y_slider
+
+
+  let compose_slider ax =
+    let get_props = slider_props ax in
+    let thumb =
+      Bonsai.Arrow.pipe
+        ( Bonsai.pure ~f:(fun (children, (props : props)) ->
+              let resize_props =
+                Resizable.props
+                  ~attributes:(get_props props).thumb.attributes
+                  (get_props props).thumb.styles in
+              text [] "", resize_props)
+        >>> Resizable.component )
+        ~via:(fun (_, props) (resize, thumb) -> thumb, (get_props props).thumb)
+        ~into:Draggable.component
+        ~finalize:(fun props (resize, thumb) (bb, set_bounds, shift, draggable) ->
+          bb, set_bounds, shift, resize, draggable) in
+    Bonsai.Arrow.pipe
+      thumb
+      ~via:(fun (children, props) (bb, set_bounds, shift, resize, draggable) ->
+        bb, set_bounds, shift, draggable, get_props props)
+      ~into:Slider.with_thumb
+      ~finalize:(fun (children, props) (bb, set_bounds, shift, resize, draggable) (value, slider) ->
+        value, shift, resize, slider)
+
+
+  let component =
+    Bonsai.Arrow.fanout (compose_slider `X) (compose_slider `Y)
+    |> Bonsai.Arrow.extend_first
+    |> Bonsai.map
+         ~f:(fun
+              ( ((x_value, x_shift, x_resize, x_slider), (y_value, y_shift, y_resize, y_slider))
+              , (children, props) )
+            ->
+           let sliders =
+             T.Input.
+               { x = { element = x_slider; shift = x_shift; resize = x_resize }
+               ; y = { element = y_slider; shift = y_shift; resize = y_resize }
+               } in
+           (x_value, y_value), sliders, children, props)
+    >>> Bonsai.of_module (module T) ~default_model:T.Model.default
 end
