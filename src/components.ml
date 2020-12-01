@@ -73,6 +73,7 @@ let clickable_box' =
          let user_on_mouse_leave = attributes.native_events.onMouseLeave in
          let user_on_mouse_down = attributes.native_events.onMouseDown in
          let user_on_mouse_up = attributes.native_events.onMouseUp in
+         let user_on_mouse_wheel = attributes.native_events.onMouseWheel in
 
          attributes.native_events
            <- { attributes.native_events with
@@ -94,6 +95,12 @@ let clickable_box' =
                       Option.iter user_on_mouse_up ~f:(fun f -> f e);
 
                       on_mouse_up e |> Event.Expert.handle)
+              ; onMouseWheel =
+                  Some
+                    (fun e ->
+                      capture ();
+
+                      Option.iter user_on_mouse_wheel ~f:(fun f -> f e))
               };
 
          attributes.style
