@@ -8,4 +8,4 @@
 (install
  (section bin)
  (package bonsai_revery)
- (files FontAwesome5FreeSolid.otf))
+ (files FontAwesome5FreeSolid.otf bonsai.png))

@@ -29,6 +29,8 @@ end
 
 (** Element attributes accepted by {!Components} *)
 module Attr : sig
+  module KindSpec = Attributes.KindSpec
+
   type t = Attributes.t
 
   open Node_events
@@ -55,6 +57,7 @@ module Attr : sig
   val on_any_click : Event.t -> t
   val tab_index : int -> t
   val style : Style.t list -> t
+  val kind : Attributes.KindSpec.t -> t
 end =
   Attributes
 
@@ -65,6 +68,7 @@ module Style = Style
 module Components : sig
   val box : Attr.t list -> Element.t list -> Element.t
   val text : Attr.t list -> string -> Element.t
+  val image : Attr.t list -> Element.t
   val opacity : ?opacity:float -> Element.t list -> Element.t
   val tick : Element.t -> every:Core_kernel.Time.Span.t -> Element.t
 

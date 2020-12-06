@@ -20,6 +20,7 @@ type transform = UI.Transform.t =
 type text_wrap_type = Revery.TextWrapping.wrapType =
   | NoWrap
   | Wrap
+  | WrapIgnoreWhitespace
   | WrapHyphenate
 
 let align_items : _ -> t = UI.Style.alignItems
@@ -62,8 +63,6 @@ let cursor cursor_type =
 let flex_direction : _ -> t = UI.Style.flexDirection
 let flex_grow : _ -> t = UI.Style.flexGrow
 let flex_wrap : _ -> t = UI.Style.flexWrap
-let font_family : _ -> t = UI.Style.fontFamily
-let font_size : _ -> t = UI.Style.fontSize
 let height : _ -> t = UI.Style.height
 let justify_content : _ -> t = UI.Style.justifyContent
 let left : _ -> t = UI.Style.left

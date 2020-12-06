@@ -2,6 +2,10 @@ module Mouse_move = struct
   type t = Revery_UI.NodeEvents.mouseMoveEventParams =
     { mouseX : float
     ; mouseY : float
+    ; ctrlKey : bool
+    ; altKey : bool
+    ; shiftKey : bool
+    ; guiKey : bool
     }
 end
 
@@ -10,6 +14,10 @@ module Mouse_button = struct
     { mouseX : float
     ; mouseY : float
     ; button : Revery_Core.MouseButton.t
+    ; ctrlKey : bool
+    ; altKey : bool
+    ; shiftKey : bool
+    ; guiKey : bool
     }
 end
 
@@ -17,6 +25,10 @@ module Mouse_wheel = struct
   type t = Revery_UI.NodeEvents.mouseWheelEventParams =
     { deltaX : float
     ; deltaY : float
+    ; ctrlKey : bool
+    ; altKey : bool
+    ; shiftKey : bool
+    ; guiKey : bool
     }
 end
 
@@ -41,6 +53,7 @@ module Keyboard = struct
     ; ctrlKey : bool
     ; altKey : bool
     ; shiftKey : bool
+    ; guiKey : bool
     }
 
   type t =

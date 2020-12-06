@@ -69,7 +69,7 @@ end
 module Result = Element
 
 module Theme = struct
-  let font_size = 16.
+  let font_size = 25.
   let rem factor = font_size *. factor
   let remi factor = rem factor |> Float.to_int
   let app_background = Color.hex "#f4edfe"
@@ -82,6 +82,8 @@ module Theme = struct
   let button_color = Color.hex "#9573C4"
   let hovered_button_color = Color.hex "#C9AEF0"
   let danger_color = Color.hex "#f7c5c6"
+  let font_info = Attr.KindSpec.(TextNode (Text.make ~size:font_size ()))
+  let bonsai_path = "bonsai.png"
 end
 
 module Styles = struct
@@ -102,14 +104,29 @@ module Styles = struct
       ]
 
 
+  let bonsai =
+    Style.
+      [ align_self `FlexStart
+      ; margin_top (Theme.remi 2.)
+      ; margin_bottom (Theme.remi 2.)
+      ; margin_left 50
+      ; margin_right 100
+      ; width 150
+      ; height 150
+      ]
+
+
   let title =
     Style.
-      [ font_size (Theme.rem 4.)
-      ; color Theme.title_text_color
+      [ color Theme.title_text_color
       ; align_self `Center
       ; margin_top (Theme.remi 2.)
       ; text_wrap NoWrap
       ]
+
+
+  let title_font =
+    Attr.KindSpec.update_text ~f:(fun a -> { a with size = Theme.rem 4. }) Theme.font_info
 end
 
 module Components = struct
@@ -134,7 +151,10 @@ module Components = struct
           ]
 
 
-      let text = Style.[ font_size (Theme.rem 0.8); color Theme.button_color; text_wrap NoWrap ]
+      let text = Style.[ color Theme.button_color; text_wrap NoWrap ]
+
+      let font =
+        Attr.KindSpec.update_text ~f:(fun a -> { a with size = Theme.rem 0.8 }) Theme.font_info
     end
 
     let view ~selected on_click title =
@@ -142,6 +162,7 @@ module Components = struct
         (fun ~hovered ->
           [ Attr.style (List.append Styles.text (Styles.box ~selected ~hovered))
           ; Attr.on_click on_click
+          ; Attr.kind Styles.font
           ])
         title
   end
@@ -166,19 +187,22 @@ module Components = struct
 
 
       let checkmark =
-        Style.
-          [ color Theme.hovered_button_color
-          ; font_size Theme.font_size
-          ; text_wrap NoWrap
-          ; font_family "FontAwesome5FreeSolid.otf"
-          ; transform [ TranslateY 2. ]
-          ]
+        Style.[ color Theme.hovered_button_color; text_wrap NoWrap; transform [ TranslateY 2. ] ]
+
+
+      let checkmark_font =
+        Attr.KindSpec.update_text
+          ~f:(fun a -> { a with family = Revery.Font.Family.fromFile "FontAwesome5FreeSolid.otf" })
+          Theme.font_info
     end
 
     let view ~checked ~on_toggle =
       box
         Attr.[ on_click on_toggle; style Styles.box ]
-        [ text Attr.[ style Styles.checkmark ] (if checked then {||} else "") ]
+        [ text
+            Attr.[ style Styles.checkmark; kind Styles.checkmark_font ]
+            (if checked then {||} else "")
+        ]
   end
 
   module Todo = struct
@@ -198,7 +222,6 @@ module Components = struct
       let text is_checked =
         Style.
           [ margin 6
-          ; font_size Theme.font_size
           ; color (if is_checked then Theme.dimmed_text_color else Theme.text_color)
           ; flex_grow 1
           ]
@@ -210,11 +233,15 @@ module Components = struct
               ( match is_hovered with
               | true -> Theme.danger_color
               | false -> Colors.transparent_white )
-          ; font_size Theme.font_size
-          ; font_family "FontAwesome5FreeSolid.otf"
           ; transform [ TranslateY 2. ]
           ; margin_right 6
           ]
+
+
+      let remove_button_font =
+        Attr.KindSpec.update_text
+          ~f:(fun a -> { a with family = Revery.Font.Family.fromFile "FontAwesome5FreeSolid.otf" })
+          Theme.font_info
     end
 
     let view ~task:_ = box Attr.[ style Styles.box ] []
@@ -224,10 +251,13 @@ module Components = struct
           box
             Attr.[ style Styles.box ]
             [ Checkbox.view ~checked:todo.completed ~on_toggle:(inject (Action.Toggle key))
-            ; text Attr.[ style (Styles.text todo.completed) ] todo.title
+            ; text Attr.[ style (Styles.text todo.completed); kind Theme.font_info ] todo.title
             ; box
                 Attr.[ on_click Event.no_op ]
-                [ text Attr.[ style (Styles.remove_button false) ] {||} ]
+                [ text
+                    Attr.[ style (Styles.remove_button false); kind Styles.remove_button_font ]
+                    {||}
+                ]
             ])
   end
 
@@ -247,16 +277,18 @@ module Components = struct
       let toggle_all all_completed =
         Style.
           [ color (if all_completed then Theme.text_color else Theme.dimmed_text_color)
-          ; font_size Theme.font_size
-          ; font_family "FontAwesome5FreeSolid.otf"
           ; transform [ TranslateY 2. ]
           ; margin_left 12
           ]
 
 
-      let input =
-        Style.
-          [ font_size Theme.font_size; border ~width:0 ~color:Colors.transparent_white; width 4000 ]
+      let toggle_all_font =
+        Attr.KindSpec.update_text
+          ~f:(fun a -> { a with family = Revery.Font.Family.fromFile "FontAwesome5FreeSolid.otf" })
+          Theme.font_info
+
+
+      let input = Style.[ border ~width:0 ~color:Colors.transparent_white; width 4000 ]
     end
 
     let view ~all_completed ~on_toggle_all children =
@@ -264,7 +296,10 @@ module Components = struct
         Attr.[ style Styles.container ]
         ( box
             Attr.[ on_click on_toggle_all ]
-            [ text Attr.[ style (Styles.toggle_all all_completed) ] {||} ]
+            [ text
+                Attr.[ style (Styles.toggle_all all_completed); kind Styles.toggle_all_font ]
+                {||}
+            ]
         :: children )
   end
 
@@ -293,21 +328,22 @@ module Components = struct
         Style.[ flex_grow 1; width 0; flex_direction `Row; justify_content `FlexEnd ]
 
 
-      let items_left =
-        Style.[ font_size (Theme.rem 0.85); color Theme.button_color; text_wrap NoWrap ]
-
+      let items_left = Style.[ color Theme.button_color; text_wrap NoWrap ]
 
       let clear_completed isHovered =
         Style.
-          [ font_size (Theme.rem 0.85)
-          ; color (if isHovered then Theme.hovered_button_color else Theme.button_color)
+          [ color (if isHovered then Theme.hovered_button_color else Theme.button_color)
           ; text_wrap NoWrap
           ]
+
+
+      let font =
+        Attr.KindSpec.update_text ~f:(fun a -> { a with size = Theme.rem 0.85 }) Theme.font_info
     end
 
     let view ~inject ~active_count ~completed_count ~current_filter =
       let items_left =
-        text Attr.[ style Styles.items_left ]
+        text Attr.[ style Styles.items_left; kind Styles.font ]
         @@
         match active_count with
         | 1 -> "1 item left"
@@ -331,7 +367,10 @@ module Components = struct
         button
           (fun ~hovered ->
             Attr.
-              [ on_click (inject Action.Clear_completed); style (Styles.clear_completed hovered) ])
+              [ on_click (inject Action.Clear_completed)
+              ; style (Styles.clear_completed hovered)
+              ; kind Styles.font
+              ])
           text in
 
       box
@@ -354,14 +393,14 @@ let todo_list =
 let text_input =
   Bonsai.pure ~f:(fun (_model, inject) ->
       Text_input.props
-        ~placeholder:"Add your Todo here"
+        ~placeholder:"Add your Todo here!"
         ~autofocus:true
         ~on_key_down:(fun event value set_value ->
           match event.key with
           | Return when not (String.is_empty value) ->
             Event.Many [ inject (Action.Add value); set_value "" ]
           | _ -> Event.no_op)
-        [])
+        Attr.[ kind Theme.font_info ])
   >>> Text_input.component
 
 
@@ -417,6 +456,16 @@ let app : (unit, Element.t) Bonsai_revery.Bonsai.t =
   >>> let%map.Bonsai todo_list = todo_list
       and add_todo = add_todo
       and footer = footer in
-      let header = text Attr.[ style Styles.title ] "todoMVC" in
+      let title = text Attr.[ style Styles.title; kind Styles.title_font ] "todoMVC" in
+      let bonsai =
+        image
+          Attr.
+            [ style Styles.bonsai
+            ; kind KindSpec.(ImageNode (Image.make ~source:(Image.File Theme.bonsai_path) ()))
+            ] in
+      let header =
+        box
+          Attr.[ style Style.[ justify_content `FlexStart; flex_direction `Row ] ]
+          [ bonsai; title ] in
 
       box Attr.[ style Styles.app_container ] [ header; add_todo; todo_list; footer ]

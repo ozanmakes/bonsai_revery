@@ -19,7 +19,9 @@
   "devDependencies": {
     "ocaml": "~4.9.0",
     "@opam/dune": ">= 2.5.0",
-    "revery": "revery-ui/revery#8e0479e"
+    "revery": "revery-ui/revery#5fe4207",
+    "@opam/merlin": "*",
+    "@opam/ocaml-lsp-server": "*"
   },
   "resolutions": {
     "esy-sdl2": "2.0.10008"

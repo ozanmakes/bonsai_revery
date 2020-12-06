@@ -31,11 +31,98 @@ type custom_event =
   | Right_click of Event.t
   | Any_click of Event.t
 
+module KindSpec = struct
+  module Text = struct
+    type t =
+      { family : Revery.Font.Family.t
+      ; weight : Revery.Font.Weight.t
+      ; size : float
+      ; smoothing : Revery.Font.Smoothing.t
+      ; italicized : bool
+      ; underlined : bool
+      ; features : Revery.Font.Feature.t list
+      }
+
+    let default =
+      { family = Revery.Font.Family.default
+      ; weight = Revery.Font.Weight.Normal
+      ; size = 12.
+      ; smoothing = Revery.Font.Smoothing.default
+      ; italicized = false
+      ; underlined = false
+      ; features = []
+      }
+
+
+    let make
+        ?(family = Revery.Font.Family.default)
+        ?(weight = Revery.Font.Weight.Normal)
+        ?(size = 12.)
+        ?(smoothing = Revery.Font.Smoothing.default)
+        ?(italicized = false)
+        ?(underlined = false)
+        ?(features = [])
+        ()
+      =
+      { family; weight; size; smoothing; italicized; underlined; features }
+  end
+
+  module Image = struct
+    type source =
+      | SkiaOpt of Skia.Image.t option
+      | File of string
+
+    type t =
+      { source : source
+      ; opacity : float
+      ; resize_mode : Revery.UI.ImageResizeMode.t
+      }
+
+    let default =
+      { source = SkiaOpt None; opacity = 1.; resize_mode = Revery.UI.ImageResizeMode.Stretch }
+
+
+    let make
+        ?(source = SkiaOpt None)
+        ?(opacity = 1.)
+        ?(resize_mode = Revery.UI.ImageResizeMode.Stretch)
+        ()
+      =
+      { source; opacity; resize_mode }
+
+
+    let source_to_skia_opt = function
+      | SkiaOpt opt -> opt
+      | File path -> Revery_IO.Image.fromAssetPath path
+  end
+
+  type t =
+    | Node
+    | TextNode of Text.t
+    | ImageNode of Image.t
+
+  let node = Node
+  let text s = TextNode s
+  let image s = ImageNode s
+
+  let update ~text ~image = function
+    | Node -> Node
+    | TextNode s -> TextNode (text s)
+    | ImageNode s -> ImageNode (image s)
+
+
+  let update_text t ~f = update t ~text:f ~image:Fn.id
+  let update_image t ~f = update t ~text:Fn.id ~image:f
+  let default_text = TextNode Text.default
+  let default_image = ImageNode Image.default
+end
+
 type t =
   | Empty
   | Native_event_handler of native_event
   | Custom_event_handler of custom_event
   | Style of UI.Style.t
+  | Kind of KindSpec.t
   | Tab_index of int
 
 let sexp_of_t = sexp_of_opaque
@@ -43,37 +130,28 @@ let default_custom_events = { on_left_click = None; on_right_click = None; on_an
 
 type attributes =
   { mutable style : UI.Style.t
+  ; mutable kind : KindSpec.t
   ; mutable native_events : UI.node UI.NodeEvents.t
   ; mutable custom_events : custom_events
   ; mutable tab_index : int option
   }
 [@@deriving fields]
 
-let default_font_family =
-  let font_path family =
-    match (Revery.Font.Discovery.find family ~weight:FontManager.FontWeight.Normal).path with
-    | "" -> None
-    | path -> Some path in
-  [ "Noto Sans"; "Liberation Sans"; "DejaVu Sans" ]
-  |> List.find_map ~f:font_path
-  |> Option.value ~default:""
-
-
-let default_style = { UI.Style.defaultStyle with fontFamily = default_font_family }
+let default_style = UI.Style.defaultStyle
 
 let make_attributes
     ?(style = default_style)
+    ?(kind = KindSpec.Node)
     ?(native_events = UI.NodeEvents.make ())
     ?tab_index
     ?(custom_events = default_custom_events)
     ()
   =
-  { style; native_events; tab_index; custom_events }
+  { style; kind; native_events; tab_index; custom_events }
 
 
-let update_node attributes node =
+let update_node' node =
   Fields_of_attributes.Direct.fold
-    attributes
     ~init:node
     ~style:(fun node _ _ x ->
       node#setStyle x;
@@ -87,8 +165,36 @@ let update_node attributes node =
     ~custom_events:(fun node _ _ _ -> node)
 
 
-let make ?default_style:custom_default_style attribute_list =
-  let attrs = make_attributes ?style:custom_default_style () in
+let update_node attributes node = update_node' node attributes ~kind:(fun node _ _ _ -> node)
+
+let update_text_node attributes node =
+  update_node' node attributes ~kind:(fun node _ _ kind ->
+      ( match kind with
+      | TextNode x ->
+        node#setFontFamily x.family;
+        node#setFontSize x.size;
+        node#setFontWeight x.weight;
+        node#setSmoothing x.smoothing;
+        node#setItalicized x.italicized;
+        node#setUnderlined x.underlined;
+        node#setFeatures x.features
+      | _ -> () );
+      node)
+
+
+let update_image_node attributes node =
+  update_node' node attributes ~kind:(fun node _ _ kind ->
+      ( match kind with
+      | ImageNode x ->
+        node#setData (KindSpec.Image.source_to_skia_opt x.source);
+        node#setOpacity x.opacity;
+        node#setResizeMode x.resize_mode
+      | _ -> () );
+      node)
+
+
+let make ?default_style:custom_default_style ?default_kind attribute_list =
+  let attrs = make_attributes ?style:custom_default_style ?kind:default_kind () in
   let handle f e = Event.Expert.handle (f e) in
   let handle_key f e =
     Event.Expert.handle
@@ -101,6 +207,7 @@ let make ?default_style:custom_default_style attribute_list =
   List.iter attribute_list ~f:(function
     | Empty -> ()
     | Style style -> attrs.style <- style
+    | Kind spec -> attrs.kind <- spec
     | Tab_index i -> attrs.tab_index <- Some i
     | Custom_event_handler (Left_click e) ->
       attrs.custom_events <- { attrs.custom_events with on_left_click = Some e }
@@ -166,3 +273,4 @@ let on_right_click e = Custom_event_handler (Right_click e)
 let on_any_click e = Custom_event_handler (Any_click e)
 let tab_index i = Tab_index i
 let style l = Style (UI.Style.create ~default:default_style ~style:l ())
+let kind l = Kind l

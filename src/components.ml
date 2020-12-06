@@ -73,6 +73,7 @@ let clickable_box' =
          let user_on_mouse_leave = attributes.native_events.onMouseLeave in
          let user_on_mouse_down = attributes.native_events.onMouseDown in
          let user_on_mouse_up = attributes.native_events.onMouseUp in
+         let user_on_mouse_wheel = attributes.native_events.onMouseWheel in
 
          attributes.native_events
            <- { attributes.native_events with
@@ -94,6 +95,12 @@ let clickable_box' =
                       Option.iter user_on_mouse_up ~f:(fun f -> f e);
 
                       on_mouse_up e |> Event.Expert.handle)
+              ; onMouseWheel =
+                  Some
+                    (fun e ->
+                      capture ();
+
+                      Option.iter user_on_mouse_wheel ~f:(fun f -> f e))
               };
 
          attributes.style
@@ -162,13 +169,13 @@ let text' ~use_dynamic_key name =
     let key : UI.React.Key.t option = Obj.magic key in
     component ?key (fun hooks ->
         let textNode = (Revery_UI_Primitives.PrimitiveNodeFactory.get ()).createTextNode text in
-        textNode#setSmoothing Revery_Font.Smoothing.default;
         let open UI.React in
-        ( { make = (fun () -> Attr.update_node attributes (Obj.magic textNode))
+        ( { make = (fun () -> Obj.magic (Attr.update_text_node attributes textNode))
           ; configureInstance =
               (fun ~isFirstRender:_ node ->
-                (Obj.magic node : Revery_UI.textNode)#setText text;
-                Attr.update_node attributes node)
+                let text_node : Revery_UI.textNode = Obj.magic node in
+                text_node#setText text;
+                Obj.magic (Attr.update_text_node attributes text_node))
           ; children = UI.React.empty
           ; insertNode
           ; deleteNode
@@ -182,6 +189,33 @@ let text =
   fun attribute_list text ->
     let attributes = Attr.make attribute_list in
     text' attributes text
+
+
+let image' ~use_dynamic_key name =
+  let component = UI.React.Expert.nativeComponent ~useDynamicKey:use_dynamic_key name in
+
+  fun ?(key : int option) attributes ->
+    let key : UI.React.Key.t option = Obj.magic key in
+    component ?key (fun hooks ->
+        let imageNode = (Revery_UI_Primitives.PrimitiveNodeFactory.get ()).createImageNode None in
+        let open UI.React in
+        ( { make = (fun () -> Obj.magic (Attr.update_image_node attributes imageNode))
+          ; configureInstance =
+              (fun ~isFirstRender:_ node ->
+                Obj.magic (Attr.update_image_node attributes (Obj.magic node)))
+          ; children = UI.React.empty
+          ; insertNode
+          ; deleteNode
+          ; moveNode
+          }
+        , hooks ))
+
+
+let image =
+  let image' = image' ~use_dynamic_key:false (Source_code_position.to_string [%here]) ?key:None in
+  fun attribute_list ->
+    let attributes = Attr.make attribute_list in
+    image' attributes
 
 
 let opacity =
@@ -212,6 +246,7 @@ let tick =
     | interval :: _ ->
       ticker.clear_active_interval
         <- Revery.Tick.interval
+             ~name:"tick stabilize"
              (fun _ ->
                Incr.Clock.advance_clock Incr.clock ~to_:(Time_ns.now ());
                Timber.Log.perf "tick stabilize" Incr.stabilize)
@@ -294,14 +329,12 @@ let button =
          let style = attributes.style in
          let style =
            UI.Style.make
-             ~fontFamily:style.fontFamily
-             ~fontSize:style.fontSize
              ~lineHeight:style.lineHeight
              ~textWrap:style.textWrap
              ~textOverflow:style.textOverflow
              ~color:style.color
              () in
-         Attr.make_attributes ~style () in
+         Attr.make_attributes ~style ~kind:attributes.kind () in
 
        clickable_box ~disabled attributes (text text_attributes title))
 
@@ -374,8 +407,7 @@ module Text_input = struct
     let default_style =
       let open Revery.UI.LayoutTypes in
       { Attr.default_style with
-        fontSize = 18.
-      ; color = Colors.black
+        color = Colors.black
       ; cursor = Some Revery.MouseCursors.text
       ; flexDirection = Revery.UI.LayoutTypes.Row
       ; alignItems = AlignCenter
@@ -384,14 +416,15 @@ module Text_input = struct
       }
 
 
+    let default_kind = Attr.KindSpec.(TextNode { Text.default with size = 18. })
+
     let compute ~inject ((cursor_on, input) : Input.t) (model : Model.t) =
       let open Revery.UI.Components.Input in
-      let textAttrs =
-        let attributes = Attr.make ~default_style input.attributes in
-        { fontFamily = attributes.style.fontFamily
-        ; fontSize = attributes.style.fontSize
-        ; color = attributes.style.color
-        } in
+      let attributes = Attr.make ~default_style ~default_kind input.attributes in
+      let font_info =
+        match attributes.kind with
+        | TextNode spec -> spec
+        | _ -> Attr.KindSpec.Text.default in
       let value = Option.first_some model.value input.default_value |> Option.value ~default:"" in
       let set_value value = inject (Action.Set_value value) in
       let show_placeholder = String.equal value "" in
@@ -400,10 +433,11 @@ module Text_input = struct
 
       let measure_text_width text =
         let dimensions =
-          Revery_Draw.Text.measure
+          Revery_Draw.Text.dimensions
             ~smoothing:Revery.Font.Smoothing.default
-            ~fontFamily:textAttrs.fontFamily
-            ~fontSize:textAttrs.fontSize
+            ~fontFamily:font_info.family
+            ~fontSize:font_info.size
+            ~fontWeight:font_info.weight
             text in
         Float.to_int dimensions.width in
 
@@ -422,7 +456,7 @@ module Text_input = struct
       let update value cursor_position = inject (Action.Text_input (value, cursor_position)) in
 
       let handle_text_input (event : Node_events.Text_input.t) =
-        let value, cursor_position = addCharacter value event.text cursor_position in
+        let value, cursor_position = insertString value event.text cursor_position in
         update value cursor_position in
 
       let handle_key_down (keyboard_event : Node_events.Keyboard.t) =
@@ -473,7 +507,7 @@ module Text_input = struct
                        [ style
                            Style.
                              [ width Constants.cursorWidth
-                             ; height (Float.to_int textAttrs.fontSize)
+                             ; height (Float.to_int font_info.size)
                              ; background_color input.cursor_color
                              ]
                        ]
@@ -492,7 +526,7 @@ module Text_input = struct
           :: on_focus (inject Action.Focus)
           :: on_blur (inject Action.Blur)
           :: input.attributes)
-        |> Attr.make ~default_style in
+        |> Attr.make ~default_style ~default_kind in
 
       attributes.style
         <- { attributes.style with
@@ -514,7 +548,8 @@ module Text_input = struct
                               ~showPlaceholder:show_placeholder
                               ~scrollOffset:scroll_offset
                               ~placeholderColor:input.placeholder_color
-                              ~textAttrs)
+                              ~color:attributes.style.color)
+                       ; kind attributes.kind
                        ]
                      (if show_placeholder then input.placeholder else value)
                  ]
