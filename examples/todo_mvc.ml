@@ -257,7 +257,7 @@ module Components = struct
           ; margin 2
           ; align_items `Center
           ; overflow `Hidden
-          ; flex_grow 1
+          ; flex_grow 0
           ]
 
 
@@ -294,7 +294,7 @@ module Components = struct
     module Styles = struct
       let container =
         let open Style in
-        [ flex_grow 1; flex_direction `Row; justify_content `SpaceBetween ]
+        [ flex_grow 0; flex_direction `Row; justify_content `SpaceBetween ]
 
 
       let filterButtonsContainer =
@@ -413,7 +413,7 @@ let scroll_view_list =
     ScrollView.props
       ~track_color:Theme.dimmed_text_color
       ~thumb_color:(Color.hex "#9D77D1")
-      Style.[ flex_direction `Column; flex_grow 10000; flex_shrink 1 ] in
+      Style.[ flex_direction `Column; flex_grow 1; flex_shrink 1 ] in
   Bonsai.map todo_list ~f:(fun children -> children, props) >>> ScrollView.component
 
 
