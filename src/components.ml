@@ -1138,8 +1138,13 @@ module ScrollView = struct
            changes, I don't think that it should overwhelm the scheduler. *)
         if Float.(model.scroll_width <> scroll_width || model.scroll_height <> scroll_height)
         then (
+<<<<<<< HEAD
           let h = Int.max props.min_thumb_size (outer_height - Int.of_float scroll_height) in
           let w = Int.max props.min_thumb_size (outer_width - Int.of_float scroll_width) in
+=======
+          let h = Int.max 15 (model.outer_height - Int.of_float scroll_height) in
+          let w = Int.max 15 (model.outer_width - Int.of_float scroll_width) in
+>>>>>>> 82778fb46642561df02f262d664ed15a32409d2c
           Event.Many
             [ inject (Scrollable (scroll_width, scroll_height))
             ; sliders.y.resize (`Set (None, Some h))
@@ -1189,6 +1194,15 @@ module ScrollView = struct
 
     let apply_action ~inject:_ ~schedule_event:_ _ (model : Model.t) = function
       | Scroll (x_pos, y_pos) -> { model with x_pos; y_pos }
+<<<<<<< HEAD
+=======
+      | OuterDimensions (w, h) -> { model with outer_width = w; outer_height = h }
+      | Count n -> { model with child_count = n }
+      | ChildDimensions (key, w, h) ->
+        { model with child_dims = Map.set model.child_dims ~key ~data:(w, h) }
+      | TrimChildren keys ->
+        { model with child_dims = Map.filter_keys model.child_dims ~f:(Set.mem keys) }
+>>>>>>> 82778fb46642561df02f262d664ed15a32409d2c
       | Scrollable (w, h) -> { model with scroll_width = w; scroll_height = h }
       | SetViewNode node -> { model with view_node = Some node }
   end
