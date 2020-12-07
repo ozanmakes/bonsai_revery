@@ -1166,25 +1166,29 @@ module ScrollView = struct
           Attr.(
             on_mouse_wheel handle_wheel
             :: node_ref (fun n -> inject (SetViewNode n))
-            :: style Style.(overflow `Scroll :: props.styles)
+            :: style Style.(overflow `Hidden :: props.styles)
             :: props.attributes)
           (Map.mapi ~f:(fun ~key ~data -> box trans [ data ]) children |> Map.data) in
 
-      (* TODO: Figure out how to make this more like ScrollView.re in Revery, where the input is an
-         element rather than a list of childen. Then there will not be so much fiddling around
-         styles as well.
+      (* NOTE (geoffder) Figure out how to make this more like ScrollView.re in Revery, where the
+         input is an element rather than a list of childen. They make use of absolute positioning,
+         but when I've tried to mimic it the Slider components don't behave correctly. My
+         understanding of flexbox and Revery's implementation is obviously lacking.
 
-         Currently I rely on being able to box each child and translate each of them. *)
-      let inner_box =
-        let styles = Style.(flex_direction `Row :: margin_bottom 2 :: props.styles |> List.rev) in
-        let elements = view :: (if Float.(scroll_height > 0.) then [ sliders.y.element ] else []) in
-        box Attr.[ style styles ] elements in
-      if Float.(scroll_width > 0.)
-      then
-        box
-          Attr.[ style Style.(flex_direction `Column :: props.styles |> List.rev) ]
-          [ inner_box; sliders.x.element ]
-      else inner_box
+         Currently flex_direction `Column (in props.styles) seems to work fine, but when scrolling
+         horizontally, checkboxes can become unclickable, almost like they are under an invisible
+         barrier. Scrolling back and forth and clicking around can eventually get back the ability
+         to click on elements again (to be lost again on a future scroll). It doesn't necessarily
+         happen after every scroll reliably, but it is very frequent. *)
+      let element =
+        let inner_box =
+          let styles = Style.[ flex_direction `Row; margin_bottom 2 ] in
+          let elements =
+            view :: (if Float.(scroll_height > 0.) then [ sliders.y.element ] else []) in
+          box Attr.[ style styles ] elements in
+        if Float.(scroll_width > 0.) then box [] [ inner_box; sliders.x.element ] else inner_box
+      in
+      box (Attr.(style props.styles) :: props.attributes) [ element ]
 
 
     let apply_action ~inject:_ ~schedule_event:_ _ (model : Model.t) = function

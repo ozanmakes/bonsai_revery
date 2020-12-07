@@ -161,13 +161,6 @@ module Components = struct
   end
 
   module Checkbox = struct
-    module Input = struct
-      type t =
-        { checked : bool
-        ; on_toggle : Event.t
-        }
-    end
-
     module Styles = struct
       let box =
         Style.
@@ -282,7 +275,7 @@ module Components = struct
           Theme.font_info
 
 
-      let input = Style.[ border ~width:0 ~color:Colors.transparent_white; width 4000 ]
+      let input = Style.[ border ~width:0 ~color:Colors.transparent_white ]
     end
 
     let view ~all_completed ~on_toggle_all children =
@@ -420,7 +413,7 @@ let scroll_view_list =
     ScrollView.props
       ~track_color:Theme.dimmed_text_color
       ~thumb_color:(Color.hex "#9D77D1")
-      Style.[ flex_grow 10000; max_height 700 ] in
+      Style.[ flex_direction `Column; flex_grow 10000; flex_shrink 1 ] in
   Bonsai.map todo_list ~f:(fun children -> children, props) >>> ScrollView.component
 
 
