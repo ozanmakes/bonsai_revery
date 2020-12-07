@@ -420,7 +420,7 @@ let scroll_view_list =
     ScrollView.props
       ~track_color:Theme.dimmed_text_color
       ~thumb_color:(Color.hex "#9D77D1")
-      Style.[ flex_grow 10000; overflow `Hidden; max_height 700 ] in
+      Style.[ flex_grow 10000; max_height 700 ] in
   Bonsai.map todo_list ~f:(fun children -> children, props) >>> ScrollView.component
 
 

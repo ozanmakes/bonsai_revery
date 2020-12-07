@@ -200,6 +200,7 @@ module Components : sig
       { speed : float
       ; styles : Style.t list
       ; attributes : Attr.t list
+      ; min_thumb_size : int
       ; x_slider : Slider.props
       ; y_slider : Slider.props
       }
@@ -213,6 +214,7 @@ module Components : sig
       -> ?attributes:Attributes.t list
       -> ?track_color:Color.t
       -> ?thumb_color:Color.t
+      -> ?min_thumb_size:int
       -> Style.t list
       -> props
 

@@ -711,9 +711,6 @@ module Resizable = struct
 end
 
 module Draggable = struct
-  (* NOTE: See Set_input_node and Set_text_node and using the node_red callback usage in Text_input
-     in order to get the actual nodes that underlie the elements (to get measurements from etc). *)
-
   (* NOTE: Might consider adding an an attribute to govern whether a box gives up capture when the
      mouse leaves it's area while the mouse button is down. It doesn't feel great when trying to
      move a slider when capture is lost. UPDATE: Tried to prevent capture loss by removing it from
@@ -1025,12 +1022,15 @@ module ScrollView = struct
     { speed : float
     ; styles : (Style.t[@sexp.opaque]) list
     ; attributes : Attr.t list
+    ; min_thumb_size : int
     ; x_slider : Slider.props
     ; y_slider : Slider.props
     }
   [@@deriving sexp_of]
 
-  let props ?(speed = 25.) ?(attributes = []) ?track_color ?thumb_color styles =
+  let props
+      ?(speed = 25.) ?(attributes = []) ?track_color ?thumb_color ?(min_thumb_size = 20) styles
+    =
     let common = Slider.props ?track_color ?thumb_color in
     let x_length =
       Slider.Dynamic
@@ -1046,7 +1046,7 @@ module ScrollView = struct
         |> Option.value ~default:Int.max_value ) in
     let x_slider = common ~vertical:false ~slider_length:x_length ~thumb_length:x_length () in
     let y_slider = common ~vertical:true ~slider_length:y_length ~thumb_length:y_length () in
-    { speed; styles; attributes; x_slider; y_slider }
+    { speed; styles; attributes; min_thumb_size; x_slider; y_slider }
 
 
   let is_mac =
@@ -1073,39 +1073,21 @@ module ScrollView = struct
       type t =
         { x_pos : float
         ; y_pos : float
-        ; outer_width : int
-        ; outer_height : int
-        ; inner_width : int
-        ; inner_height : int
         ; scroll_width : float
         ; scroll_height : float
-        ; child_count : int
-        ; child_dims : (int * int) Map.M(Int).t
+        ; view_node : (UI.node[@sexp.opaque] [@equal.ignore]) option
         }
       [@@deriving equal, sexp]
 
       let default =
-        { x_pos = 0.
-        ; y_pos = 0.
-        ; outer_width = 0
-        ; outer_height = 0
-        ; inner_width = 0
-        ; inner_height = 0
-        ; scroll_width = 0.
-        ; scroll_height = 0.
-        ; child_count = 0
-        ; child_dims = Map.empty (module Int)
-        }
+        { x_pos = 0.; y_pos = 0.; scroll_width = 0.; scroll_height = 0.; view_node = None }
     end
 
     module Action = struct
       type t =
         | Scroll of float * float
-        | OuterDimensions of int * int
         | Scrollable of float * float
-        | Count of int
-        | ChildDimensions of int * int * int
-        | TrimChildren of Set.M(Int).t
+        | SetViewNode of (UI.node[@sexp.opaque])
       [@@deriving sexp_of]
     end
 
@@ -1130,45 +1112,34 @@ module ScrollView = struct
     module Result = Element
 
     let name = "ScrollView"
-
-    (* Sum over the major dimension, max over the minor dimension. *)
-    let calculate_totals columnar dims =
-      let w_fun, h_fun = if columnar then Int.max, ( + ) else ( + ), Int.max in
-      let f ~key:_ ~data:(w, h) (w_acc, h_acc) = w_fun w_acc w, h_fun h_acc h in
-      dims |> Map.fold ~init:(0, 0) ~f
-
-
     let excess total limit = Float.(of_int Int.(total - limit) |> clamp_exn ~min:0. ~max:max_value)
 
-    let scrollable columnar width height child_dims =
-      let children_width, children_height = calculate_totals columnar child_dims in
-      excess children_width width, excess children_height height
+    (* Sum over the major dimension, max over the minor dimension. *)
+    let scrollable columnar outer_width outer_height node =
+      let inner_width, inner_height =
+        let w_fun, h_fun = if columnar then Int.max, ( + ) else ( + ), Int.max in
+        let f (w_acc, h_acc) child =
+          let dims : Revery.UI.Dimensions.t = child#measurements () in
+          w_fun w_acc dims.width, h_fun h_acc dims.height in
+        List.fold ~init:(0, 0) ~f (node#getChildren ()) in
+      excess inner_width outer_width, excess inner_height outer_height
 
 
     let compute ~inject ((control, sliders, children, props) : Input.t) (model : Model.t) =
-      let scroll_width, scroll_height =
-        scrollable (is_columnar props.styles) model.outer_width model.outer_height model.child_dims
+      let outer_width, outer_height, (scroll_width, scroll_height) =
+        match model.view_node with
+        | None -> 0, 0, (0., 0.)
+        | Some node ->
+          let dims : Revery.UI.Dimensions.t = node#measurements () in
+          dims.width, dims.height, scrollable (is_columnar props.styles) dims.width dims.height node
       in
       let () =
-        (* NOTE: I'm wary of using Expert.handle, and I could conceivably have these fired along
-           with when child dimensions change, but then the bundled events would go off once for
-           every child (since they all fire dimensions changed events any time one is added or
-           removed). *)
-        let count = Map.length children in
-        if count <> model.child_count
-        then
-          Event.Many
-            [ inject (Count count)
-            ; ( if count < model.child_count
-              then inject (TrimChildren (Map.key_set children))
-              else Event.no_op )
-            ]
-          |> Event.Expert.handle;
-
+        (* NOTE: I'm wary of using Expert.handle, but since this only fires when there are relevant
+           changes, I don't think that it should overwhelm the scheduler. *)
         if Float.(model.scroll_width <> scroll_width || model.scroll_height <> scroll_height)
         then (
-          let h = model.outer_height - Int.of_float scroll_height in
-          let w = model.outer_width - Int.of_float scroll_width in
+          let h = Int.max props.min_thumb_size (outer_height - Int.of_float scroll_height) in
+          let w = Int.max props.min_thumb_size (outer_width - Int.of_float scroll_width) in
           Event.Many
             [ inject (Scrollable (scroll_width, scroll_height))
             ; sliders.y.resize (`Set (None, Some h))
@@ -1177,54 +1148,49 @@ module ScrollView = struct
           |> Event.Expert.handle ) in
 
       let handle_wheel ({ shiftKey; deltaY; _ } : Node_events.Mouse_wheel.t) =
-        let delta = deltaY *. props.speed in
+        let delta = deltaY *. props.speed *. -1. in
         match Float.(abs delta > 0.), shiftKey with
         | true, false -> sliders.y.shift 0. delta
         | true, true -> sliders.x.shift (delta *. horizonal_scroll_multiplier) 0.
         | _ -> Event.no_op in
-      let outer_dimension_change ({ width; height } : Node_events.Dimensions_changed.t) =
-        inject (OuterDimensions (width, height)) in
 
       let trans_x = fst control *. scroll_width in
       let trans_y = snd control *. scroll_height in
-      let trans key =
+      let trans =
         Attr.
-          [ style Style.[ transform [ TranslateX (-1. *. trans_x); TranslateY (-1. *. trans_y) ] ]
-          ; on_dimensions_changed (fun { width; height } ->
-                inject (ChildDimensions (key, width, height)))
-          ] in
+          [ style Style.[ transform [ TranslateX (-1. *. trans_x); TranslateY (-1. *. trans_y) ] ] ]
+      in
 
       let view =
         box
           Attr.(
             on_mouse_wheel handle_wheel
-            :: on_dimensions_changed outer_dimension_change
-            :: style props.styles
+            :: node_ref (fun n -> inject (SetViewNode n))
+            :: style Style.(overflow `Scroll :: props.styles)
             :: props.attributes)
-          (Map.mapi ~f:(fun ~key ~data -> box (trans key) [ data ]) children |> Map.data) in
+          (Map.mapi ~f:(fun ~key ~data -> box trans [ data ]) children |> Map.data) in
 
-      (* NOTE: Having some trouble deciding how to most cleanly / generally deal with the problem of
-         inheriting the correct style properties and attributes given to ScrollView. For instance,
-         flex_grow. Should the lists be filtered, or should overrides be tacked on like below? *)
+      (* TODO: Figure out how to make this more like ScrollView.re in Revery, where the input is an
+         element rather than a list of childen. Then there will not be so much fiddling around
+         styles as well.
+
+         Currently I rely on being able to box each child and translate each of them. *)
       let inner_box =
         let styles = Style.(flex_direction `Row :: margin_bottom 2 :: props.styles |> List.rev) in
         let elements = view :: (if Float.(scroll_height > 0.) then [ sliders.y.element ] else []) in
         box Attr.[ style styles ] elements in
       if Float.(scroll_width > 0.)
-      then box Attr.[ style props.styles ] [ inner_box; sliders.x.element ]
+      then
+        box
+          Attr.[ style Style.(flex_direction `Column :: props.styles |> List.rev) ]
+          [ inner_box; sliders.x.element ]
       else inner_box
 
 
     let apply_action ~inject:_ ~schedule_event:_ _ (model : Model.t) = function
       | Scroll (x_pos, y_pos) -> { model with x_pos; y_pos }
-      | OuterDimensions (w, h) -> { model with outer_width = w; outer_height = h }
-      | Count n -> { model with child_count = n }
-      | ChildDimensions (key, w, h) ->
-        Log.perf "child dims" (fun () -> ());
-        { model with child_dims = Map.set model.child_dims ~key ~data:(w, h) }
-      | TrimChildren keys ->
-        { model with child_dims = Map.filter_keys model.child_dims ~f:(Set.mem keys) }
       | Scrollable (w, h) -> { model with scroll_width = w; scroll_height = h }
+      | SetViewNode node -> { model with view_node = Some node }
   end
 
   let slider_props ax props =
