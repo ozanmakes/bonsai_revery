@@ -711,9 +711,6 @@ module Resizable = struct
 end
 
 module Draggable = struct
-  (* NOTE: See Set_input_node and Set_text_node and using the node_red callback usage in Text_input
-     in order to get the actual nodes that underlie the elements (to get measurements from etc). *)
-
   (* NOTE: Might consider adding an an attribute to govern whether a box gives up capture when the
      mouse leaves it's area while the mouse button is down. It doesn't feel great when trying to
      move a slider when capture is lost. UPDATE: Tried to prevent capture loss by removing it from
@@ -1167,8 +1164,8 @@ module ScrollView = struct
 
         if Float.(model.scroll_width <> scroll_width || model.scroll_height <> scroll_height)
         then (
-          let h = model.outer_height - Int.of_float scroll_height in
-          let w = model.outer_width - Int.of_float scroll_width in
+          let h = Int.max 15 (model.outer_height - Int.of_float scroll_height) in
+          let w = Int.max 15 (model.outer_width - Int.of_float scroll_width) in
           Event.Many
             [ inject (Scrollable (scroll_width, scroll_height))
             ; sliders.y.resize (`Set (None, Some h))
@@ -1177,7 +1174,7 @@ module ScrollView = struct
           |> Event.Expert.handle ) in
 
       let handle_wheel ({ shiftKey; deltaY; _ } : Node_events.Mouse_wheel.t) =
-        let delta = deltaY *. props.speed in
+        let delta = deltaY *. props.speed *. -1. in
         match Float.(abs delta > 0.), shiftKey with
         | true, false -> sliders.y.shift 0. delta
         | true, true -> sliders.x.shift (delta *. horizonal_scroll_multiplier) 0.
@@ -1211,7 +1208,10 @@ module ScrollView = struct
         let elements = view :: (if Float.(scroll_height > 0.) then [ sliders.y.element ] else []) in
         box Attr.[ style styles ] elements in
       if Float.(scroll_width > 0.)
-      then box Attr.[ style props.styles ] [ inner_box; sliders.x.element ]
+      then
+        box
+          Attr.[ style Style.(flex_direction `Column :: props.styles |> List.rev) ]
+          [ inner_box; sliders.x.element ]
       else inner_box
 
 
@@ -1220,7 +1220,6 @@ module ScrollView = struct
       | OuterDimensions (w, h) -> { model with outer_width = w; outer_height = h }
       | Count n -> { model with child_count = n }
       | ChildDimensions (key, w, h) ->
-        Log.perf "child dims" (fun () -> ());
         { model with child_dims = Map.set model.child_dims ~key ~data:(w, h) }
       | TrimChildren keys ->
         { model with child_dims = Map.filter_keys model.child_dims ~f:(Set.mem keys) }
