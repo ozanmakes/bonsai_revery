@@ -31,7 +31,6 @@ let native_box =
 
 let clickable_box' =
   let is_mouse_captured = ref false in
-
   let module Log = (val Log.with_namespace (Source_code_position.to_string [%here])) in
   fun ?key ?(disabled = false) component attributes f ->
     component
@@ -87,7 +86,6 @@ let clickable_box' =
                   Some
                     (fun e ->
                       capture ();
-
                       Option.iter user_on_mouse_down ~f:(fun f -> f e))
               ; onMouseUp =
                   Some
@@ -95,12 +93,7 @@ let clickable_box' =
                       Option.iter user_on_mouse_up ~f:(fun f -> f e);
 
                       on_mouse_up e |> Event.Expert.handle)
-              ; onMouseWheel =
-                  Some
-                    (fun e ->
-                      capture ();
-
-                      Option.iter user_on_mouse_wheel ~f:(fun f -> f e))
+              ; onMouseWheel = Some (fun e -> Option.iter user_on_mouse_wheel ~f:(fun f -> f e))
               };
 
          attributes.style
