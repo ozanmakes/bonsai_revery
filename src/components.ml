@@ -1163,16 +1163,6 @@ module ScrollView = struct
             :: props.attributes)
           (Map.mapi ~f:(fun ~key ~data -> box trans [ data ]) children |> Map.data) in
 
-      (* NOTE (geoffder) Figure out how to make this more like ScrollView.re in Revery, where the
-         input is an element rather than a list of childen. They make use of absolute positioning,
-         but when I've tried to mimic it the Slider components don't behave correctly. My
-         understanding of flexbox and Revery's implementation is obviously lacking.
-
-         Currently flex_direction `Column (in props.styles) seems to work fine, but when scrolling
-         horizontally, checkboxes can become unclickable, almost like they are under an invisible
-         barrier. Scrolling back and forth and clicking around can eventually get back the ability
-         to click on elements again (to be lost again on a future scroll). It doesn't necessarily
-         happen after every scroll reliably, but it is very frequent. *)
       let element =
         let inner_box =
           let styles = Style.[ flex_direction `Row; margin_bottom 2 ] in
