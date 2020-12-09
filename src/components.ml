@@ -750,7 +750,7 @@ module Draggable = struct
         { start = None
         ; x_trans = 0.
         ; y_trans = 0.
-        ; inner_box = BoundingBox2d.create 0. 0. 1. 1.
+        ; inner_box = BoundingBox2d.create 0. 0. 0. 0.
         ; outer_box = None
         }
     end
@@ -863,7 +863,7 @@ module Draggable = struct
           | None ->
             let l, t, r, b = BoundingBox2d.get_bounds model.inner_box in
             (l +. r) /. 2., (t +. b) /. 2. in
-        let x_pos = y0 +. model.x_trans in
+        let x_pos = x0 +. model.x_trans in
         let y_pos = y0 +. model.y_trans in
         let shift_x, shift_y =
           shift freedom model.inner_box model.outer_box x_pos y_pos (x_pos +. x) (y_pos +. y) in
@@ -887,19 +887,27 @@ module Slider = struct
     | Static v -> v
 
 
-  let length_to_styles vertical thickness = function
+  let length_to_styles vertical reverse thickness = function
     | Static i ->
       Style.
         [ width (if vertical then thickness else i); height (if vertical then i else thickness) ]
     | Dynamic i ->
       if vertical
-      then Style.[ width thickness; max_height i; flex_direction `Column ]
-      else Style.[ height thickness; max_width i; flex_direction `Row ]
+      then
+        Style.
+          [ width thickness
+          ; max_height i
+          ; flex_direction (if reverse then `ColumnReverse else `Column)
+          ]
+      else
+        Style.
+          [ height thickness; max_width i; flex_direction (if reverse then `RowReverse else `Row) ]
 
 
   type props =
     { on_value_changed : float -> Event.t
     ; vertical : bool
+    ; reverse : bool
     ; min_value : float
     ; max_value : float
     ; init_value : float
@@ -913,6 +921,7 @@ module Slider = struct
   let props
       ?(on_value_changed = fun _ -> Event.no_op)
       ?(vertical = true)
+      ?(reverse = false)
       ?(min_value = 0.)
       ?(max_value = 1.)
       ?(init_value = 0.)
@@ -929,10 +938,11 @@ module Slider = struct
         ~snap_back:false
         ~freedom:(if vertical then Y else X)
         Style.(
-          background_color thumb_color :: length_to_styles vertical thumb_thickness thumb_length)
-    in
+          background_color thumb_color
+          :: length_to_styles vertical reverse thumb_thickness thumb_length) in
     { on_value_changed
     ; vertical
+    ; reverse
     ; min_value
     ; max_value
     ; init_value
@@ -946,12 +956,12 @@ module Slider = struct
   module T = struct
     module Model = struct
       type t =
-        { value : float option
+        { mutable initialized : bool
         ; bounding_box : (BoundingBox2d.t[@sexp.opaque]) option
         }
       [@@deriving equal, sexp]
 
-      let default = { value = None; bounding_box = None }
+      let default = { initialized = false; bounding_box = None }
     end
 
     module Action = struct
@@ -975,8 +985,29 @@ module Slider = struct
 
     let name = "Slider"
 
+    (* TODO: Consider changing Draggable bb result to be an option to avoid this. *)
+    let zero_bb = BoundingBox2d.create 0. 0. 0. 0.
+
     let compute ~inject ((bar_bb, set_bar_bb, shift_bar, bar, props) : Input.t) (model : Model.t) =
       let handle_bounding_box_change bb = Event.Many [ inject (SetBoundingBox bb); set_bar_bb bb ] in
+      let () =
+        if not model.initialized
+        then (
+          match model.bounding_box with
+          | None -> ()
+          | Some _ when BoundingBox2d.equal bar_bb zero_bb -> ()
+          | Some bb ->
+            let s_l, s_t, s_r, s_b = BoundingBox2d.get_bounds bb in
+            let b_l, b_t, b_r, b_b = BoundingBox2d.get_bounds bar_bb in
+            let v = (props.init_value -. props.min_value) /. (props.max_value -. props.min_value) in
+            Log.perf (sprintf "value: %.2f" (v *. (s_r -. s_l -. b_r +. b_l))) (fun () -> ());
+            let shift =
+              if props.vertical
+              then shift_bar 0. (v *. (s_t -. s_b -. b_t +. b_b))
+              else shift_bar (v *. (s_r -. s_l -. b_r +. b_l)) 0. in
+            model.initialized <- true;
+            Event.(Expert.handle shift) ) in
+
       let value =
         Option.value_map model.bounding_box ~default:props.init_value ~f:(fun bb ->
             let s_l, s_t, s_r, s_b = BoundingBox2d.get_bounds bb in
@@ -988,7 +1019,8 @@ module Slider = struct
       let styles =
         let open Style in
         background_color props.track_color
-        :: length_to_styles props.vertical props.track_thickness props.slider_length in
+        :: length_to_styles props.vertical props.reverse props.track_thickness props.slider_length
+      in
       let element =
         box Attr.[ on_bounding_box_changed handle_bounding_box_change; style styles ] [ bar ] in
       value, element
@@ -1022,7 +1054,14 @@ module ScrollView = struct
   [@@deriving sexp_of]
 
   let props
-      ?(speed = 25.) ?(attributes = []) ?track_color ?thumb_color ?(min_thumb_size = 20) styles
+      ?(speed = 25.)
+      ?(attributes = [])
+      ?track_color
+      ?thumb_color
+      ?(min_thumb_size = 20)
+      ?(x_reverse = false)
+      ?(y_reverse = false)
+      styles
     =
     let common = Slider.props ?track_color ?thumb_color in
     let x_length =
@@ -1037,8 +1076,24 @@ module ScrollView = struct
             | `MaxHeight h -> Some h
             | _ -> None)
         |> Option.value ~default:Int.max_value ) in
-    let x_slider = common ~vertical:false ~slider_length:x_length ~thumb_length:x_length () in
-    let y_slider = common ~vertical:true ~slider_length:y_length ~thumb_length:y_length () in
+    let x_slider =
+      common
+        ~vertical:false
+        ~reverse:x_reverse
+        ~slider_length:x_length
+        ~thumb_length:x_length
+        ~min_value:(if x_reverse then -1. else 0.)
+        ~max_value:(if x_reverse then 0. else 1.)
+        () in
+    let y_slider =
+      common
+        ~vertical:true
+        ~reverse:y_reverse
+        ~slider_length:y_length
+        ~thumb_length:y_length
+        ~min_value:(if y_reverse then -1. else 0.)
+        ~max_value:(if y_reverse then 0. else 1.)
+        () in
     { speed; styles; attributes; min_thumb_size; x_slider; y_slider }
 
 
