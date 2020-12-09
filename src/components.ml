@@ -996,13 +996,12 @@ module Slider = struct
             let s_l, s_t, s_r, s_b = BoundingBox2d.get_bounds bb in
             let b_l, b_t, b_r, b_b = BoundingBox2d.get_bounds bar_bb in
             let v = (props.init_value -. props.min_value) /. (props.max_value -. props.min_value) in
-            Log.perf (sprintf "value: %.2f" (v *. (s_r -. s_l -. b_r +. b_l))) (fun () -> ());
             let shift =
               if props.vertical
               then shift_bar 0. (v *. (s_t -. s_b -. b_t +. b_b))
               else shift_bar (v *. (s_r -. s_l -. b_r +. b_l)) 0. in
             model.initialized <- true;
-            Event.(Expert.handle shift)
+            Event.Expert.handle shift
           | _ -> () ) in
 
       let handle_bounding_box_change bb = Event.Many [ inject (SetBoundingBox bb); set_bar_bb bb ] in
@@ -1020,8 +1019,10 @@ module Slider = struct
         background_color props.track_color
         :: length_to_styles props.vertical props.reverse props.track_thickness props.slider_length
       in
+      let thumb = box Attr.[ style Style.[ justify_content `Center ] ] [ bar ] in
       let element =
-        box Attr.[ on_bounding_box_changed handle_bounding_box_change; style styles ] [ bar ] in
+        box Attr.[ on_bounding_box_changed handle_bounding_box_change; style styles ] [ thumb ]
+      in
       value, element
 
 

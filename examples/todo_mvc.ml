@@ -394,6 +394,7 @@ let slider_box =
           ~max_value:100.
           ~vertical:false
           ~init_value:50.
+          ~track_thickness:5
           ())
     >>> Slider.component in
   let display =
