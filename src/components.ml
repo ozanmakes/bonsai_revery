@@ -741,18 +741,12 @@ module Draggable = struct
         { start : (float * float) option
         ; x_trans : float
         ; y_trans : float
-        ; inner_box : (BoundingBox2d.t[@sexp.opaque])
+        ; inner_box : (BoundingBox2d.t[@sexp.opaque]) option
         ; outer_box : (BoundingBox2d.t[@sexp.opaque]) option
         }
       [@@deriving equal, sexp]
 
-      let default =
-        { start = None
-        ; x_trans = 0.
-        ; y_trans = 0.
-        ; inner_box = BoundingBox2d.create 0. 0. 0. 0.
-        ; outer_box = None
-        }
+      let default = { start = None; x_trans = 0.; y_trans = 0.; inner_box = None; outer_box = None }
     end
 
     module Action = struct
@@ -775,7 +769,10 @@ module Draggable = struct
 
     module Result = struct
       type t =
-        BoundingBox2d.t * (BoundingBox2d.t -> Event.t) * (float -> float -> Event.t) * Element.t
+        BoundingBox2d.t option
+        * (BoundingBox2d.t -> Event.t)
+        * (float -> float -> Event.t)
+        * Element.t
     end
 
     let name = "Draggable"
@@ -813,18 +810,20 @@ module Draggable = struct
           ( match button with
           | BUTTON_LEFT ->
             inject Drop
-            :: props.on_drop model.inner_box
-            :: (if props.snap_back then [ inject Reset ] else [])
+            :: List.filter_opt
+                 [ Option.map model.inner_box ~f:(fun bb -> props.on_drop bb)
+                 ; (if props.snap_back then Some (inject Reset) else None)
+                 ]
           | BUTTON_RIGHT -> [ inject Reset ]
           | _ -> [ Event.no_op ] ) in
       let handle_mouse_move ({ mouseX = x1; mouseY = y1; _ } : Node_events.Mouse_move.t) =
         Event.Many
-          ( match model.start with
-          | Some (x0, y0) ->
+          ( match model.start, model.inner_box with
+          | Some (x0, y0), Some inner_box ->
             let x_shift, y_shift =
               shift
                 props.freedom
-                model.inner_box
+                inner_box
                 model.outer_box
                 (x0 +. model.x_trans)
                 (y0 +. model.y_trans)
@@ -833,7 +832,7 @@ module Draggable = struct
             let x = x_shift +. model.x_trans in
             let y = y_shift +. model.y_trans in
             [ inject (Drag (x, y)); props.on_drag ~x ~y ]
-          | None -> [ Event.no_op ] ) in
+          | _ -> [ Event.no_op ] ) in
       let handle_bounding_box_change bb = inject (InnerBox bb) in
       let trans = Style.(transform [ TranslateX model.x_trans; TranslateY model.y_trans ]) in
 
@@ -857,19 +856,22 @@ module Draggable = struct
       | Drop -> { model with start = None }
       | Drag (x, y) -> { model with x_trans = x; y_trans = y }
       | Shift (freedom, x, y) ->
-        let x0, y0 =
-          match model.start with
-          | Some (x, y) -> x, y
-          | None ->
-            let l, t, r, b = BoundingBox2d.get_bounds model.inner_box in
-            (l +. r) /. 2., (t +. b) /. 2. in
-        let x_pos = x0 +. model.x_trans in
-        let y_pos = y0 +. model.y_trans in
-        let shift_x, shift_y =
-          shift freedom model.inner_box model.outer_box x_pos y_pos (x_pos +. x) (y_pos +. y) in
-        { model with x_trans = shift_x +. model.x_trans; y_trans = shift_y +. model.y_trans }
+        ( match model.inner_box with
+        | None -> model
+        | Some inner_box ->
+          let x0, y0 =
+            match model.start with
+            | Some (x, y) -> x, y
+            | None ->
+              let l, t, r, b = BoundingBox2d.get_bounds inner_box in
+              (l +. r) /. 2., (t +. b) /. 2. in
+          let x_pos = x0 +. model.x_trans in
+          let y_pos = y0 +. model.y_trans in
+          let shift_x, shift_y =
+            shift freedom inner_box model.outer_box x_pos y_pos (x_pos +. x) (y_pos +. y) in
+          { model with x_trans = shift_x +. model.x_trans; y_trans = shift_y +. model.y_trans } )
       | Reset -> { model with x_trans = 0.; y_trans = 0. }
-      | InnerBox bb -> { model with inner_box = bb }
+      | InnerBox bb -> { model with inner_box = Some bb }
       | OuterBox bb -> { model with outer_box = Some bb }
   end
 
@@ -970,7 +972,7 @@ module Slider = struct
 
     module Input = struct
       type t =
-        BoundingBox2d.t
+        BoundingBox2d.t option
         * (BoundingBox2d.t -> Event.t)
         * (float -> float -> Event.t)
         * Element.t
@@ -985,18 +987,12 @@ module Slider = struct
 
     let name = "Slider"
 
-    (* TODO: Consider changing Draggable bb result to be an option to avoid this. *)
-    let zero_bb = BoundingBox2d.create 0. 0. 0. 0.
-
     let compute ~inject ((bar_bb, set_bar_bb, shift_bar, bar, props) : Input.t) (model : Model.t) =
-      let handle_bounding_box_change bb = Event.Many [ inject (SetBoundingBox bb); set_bar_bb bb ] in
       let () =
         if not model.initialized
         then (
-          match model.bounding_box with
-          | None -> ()
-          | Some _ when BoundingBox2d.equal bar_bb zero_bb -> ()
-          | Some bb ->
+          match model.bounding_box, bar_bb with
+          | Some bb, Some bar_bb ->
             let s_l, s_t, s_r, s_b = BoundingBox2d.get_bounds bb in
             let b_l, b_t, b_r, b_b = BoundingBox2d.get_bounds bar_bb in
             let v = (props.init_value -. props.min_value) /. (props.max_value -. props.min_value) in
@@ -1006,16 +1002,19 @@ module Slider = struct
               then shift_bar 0. (v *. (s_t -. s_b -. b_t +. b_b))
               else shift_bar (v *. (s_r -. s_l -. b_r +. b_l)) 0. in
             model.initialized <- true;
-            Event.(Expert.handle shift) ) in
+            Event.(Expert.handle shift)
+          | _ -> () ) in
 
+      let handle_bounding_box_change bb = Event.Many [ inject (SetBoundingBox bb); set_bar_bb bb ] in
       let value =
-        Option.value_map model.bounding_box ~default:props.init_value ~f:(fun bb ->
-            let s_l, s_t, s_r, s_b = BoundingBox2d.get_bounds bb in
-            let b_l, b_t, b_r, b_b = BoundingBox2d.get_bounds bar_bb in
-            ( if props.vertical
-            then (s_t -. b_t) /. (s_t -. s_b -. b_t +. b_b +. 0.000001)
-            else (s_l -. b_l) /. (s_l -. s_r -. b_l +. b_r +. 0.000001) )
-            |> fun v -> (v *. (props.max_value -. props.min_value)) +. props.min_value) in
+        Option.both model.bounding_box bar_bb
+        |> Option.value_map ~default:props.init_value ~f:(fun (bb, bar_bb) ->
+               let s_l, s_t, s_r, s_b = BoundingBox2d.get_bounds bb in
+               let b_l, b_t, b_r, b_b = BoundingBox2d.get_bounds bar_bb in
+               ( if props.vertical
+               then (s_t -. b_t) /. (s_t -. s_b -. b_t +. b_b +. 0.000001)
+               else (s_l -. b_l) /. (s_l -. s_r -. b_l +. b_r +. 0.000001) )
+               |> fun v -> (v *. (props.max_value -. props.min_value)) +. props.min_value) in
       let styles =
         let open Style in
         background_color props.track_color

@@ -86,7 +86,10 @@ module Draggable : sig
 
   val component
     : ( Element.t * props
-      , BoundingBox2d.t * (BoundingBox2d.t -> Event.t) * (float -> float -> Event.t) * Element.t )
+      , BoundingBox2d.t option
+        * (BoundingBox2d.t -> Event.t)
+        * (float -> float -> Event.t)
+        * Element.t )
       Bonsai.t
 end
 

@@ -153,7 +153,7 @@ module Components : sig
 
     val component
       : ( Element.t * props
-        , Import.BoundingBox2d.t
+        , Import.BoundingBox2d.t option
           * (Import.BoundingBox2d.t -> Event.t)
           * (float -> float -> Event.t)
           * Element.t )
