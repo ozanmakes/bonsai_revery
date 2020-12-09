@@ -748,7 +748,7 @@ module Draggable = struct
         | Grab of float * float
         | Drop
         | Drag of float * float
-        | Shift of freedom * float * float
+        | Shift of float * float
         | Reset
         | InnerBox of (BoundingBox2d.t[@sexp.opaque])
         | OuterBox of (BoundingBox2d.t[@sexp.opaque])
@@ -830,7 +830,7 @@ module Draggable = struct
       let handle_bounding_box_change bb = inject (InnerBox bb) in
       let trans = Style.(transform [ TranslateX model.x_trans; TranslateY model.y_trans ]) in
 
-      let shift_callback x y = inject (Shift (props.freedom, x, y)) in
+      let shift_callback x y = inject (Shift (x, y)) in
       let set_bounds bb = inject (OuterBox bb) in
       let element =
         box
@@ -845,11 +845,11 @@ module Draggable = struct
       model.inner_box, set_bounds, shift_callback, element
 
 
-    let apply_action ~inject:_ ~schedule_event:_ _ (model : Model.t) = function
+    let apply_action ~inject:_ ~schedule_event:_ ((_, props) : Input.t) (model : Model.t) = function
       | Grab (x, y) -> { model with start = Some (x -. model.x_trans, y -. model.y_trans) }
       | Drop -> { model with start = None }
       | Drag (x, y) -> { model with x_trans = x; y_trans = y }
-      | Shift (freedom, x, y) ->
+      | Shift (x, y) ->
         ( match model.inner_box with
         | None -> model
         | Some inner_box ->
@@ -862,7 +862,8 @@ module Draggable = struct
           let x_pos = x0 +. model.x_trans in
           let y_pos = y0 +. model.y_trans in
           let shift_x, shift_y =
-            shift freedom inner_box model.outer_box x_pos y_pos (x_pos +. x) (y_pos +. y) in
+            shift props.freedom inner_box model.outer_box x_pos y_pos (x_pos +. x) (y_pos +. y)
+          in
           { model with x_trans = shift_x +. model.x_trans; y_trans = shift_y +. model.y_trans } )
       | Reset -> { model with x_trans = 0.; y_trans = 0. }
       | InnerBox bb -> { model with inner_box = Some bb }
@@ -981,42 +982,51 @@ module Slider = struct
 
     let name = "Slider"
 
+    let travel vertical slider_bb bar_bb =
+      let s_l, s_t, s_r, s_b = BoundingBox2d.get_bounds slider_bb in
+      let b_l, b_t, b_r, b_b = BoundingBox2d.get_bounds bar_bb in
+      if vertical
+      then (s_t -. b_t) /. (s_t -. s_b -. b_t +. b_b +. 0.000001)
+      else (s_l -. b_l) /. (s_l -. s_r -. b_l +. b_r +. 0.000001)
+
+
+    let value_to_travel v min max = (v -. min) /. (max -. min)
+    let travel_to_value trav min max = (trav *. (max -. min)) +. min
+
+    let apply_shift vertical slider_bb bar_bb shift trav =
+      let s_l, s_t, s_r, s_b = BoundingBox2d.get_bounds slider_bb in
+      let b_l, b_t, b_r, b_b = BoundingBox2d.get_bounds bar_bb in
+      if vertical
+      then shift 0. (trav *. (s_b -. s_t -. b_b +. b_t))
+      else shift (trav *. (s_r -. s_l -. b_r +. b_l)) 0.
+
+
     let compute ~inject ((bar_bb, set_bar_bb, shift_bar, bar, props) : Input.t) (model : Model.t) =
       let () =
         if not model.initialized
         then (
           match model.bounding_box, bar_bb with
           | Some bb, Some bar_bb ->
-            let s_l, s_t, s_r, s_b = BoundingBox2d.get_bounds bb in
-            let b_l, b_t, b_r, b_b = BoundingBox2d.get_bounds bar_bb in
-            let v = (props.init_value -. props.min_value) /. (props.max_value -. props.min_value) in
-            let shift =
-              if props.vertical
-              then shift_bar 0. (v *. (s_t -. s_b -. b_t +. b_b))
-              else shift_bar (v *. (s_r -. s_l -. b_r +. b_l)) 0. in
-            model.initialized <- true;
-            Event.Expert.handle shift
+            value_to_travel props.init_value props.min_value props.max_value
+            |> apply_shift props.vertical bb bar_bb shift_bar
+            |> Event.Expert.handle;
+            model.initialized <- true
           | _ -> () ) in
 
       let handle_bounding_box_change bb = Event.Many [ inject (SetBoundingBox bb); set_bar_bb bb ] in
       let value =
         Option.both model.bounding_box bar_bb
         |> Option.value_map ~default:props.init_value ~f:(fun (bb, bar_bb) ->
-               let s_l, s_t, s_r, s_b = BoundingBox2d.get_bounds bb in
-               let b_l, b_t, b_r, b_b = BoundingBox2d.get_bounds bar_bb in
-               ( if props.vertical
-               then (s_t -. b_t) /. (s_t -. s_b -. b_t +. b_b +. 0.000001)
-               else (s_l -. b_l) /. (s_l -. s_r -. b_l +. b_r +. 0.000001) )
-               |> fun v -> (v *. (props.max_value -. props.min_value)) +. props.min_value) in
+               let v = travel props.vertical bb bar_bb in
+               travel_to_value v props.min_value props.max_value) in
       let styles =
         let open Style in
         background_color props.track_color
+        :: (if props.vertical then align_items `Center else justify_content `Center)
         :: length_to_styles props.vertical props.reverse props.track_thickness props.slider_length
       in
-      let thumb = box Attr.[ style Style.[ justify_content `Center ] ] [ bar ] in
       let element =
-        box Attr.[ on_bounding_box_changed handle_bounding_box_change; style styles ] [ thumb ]
-      in
+        box Attr.[ on_bounding_box_changed handle_bounding_box_change; style styles ] [ bar ] in
       value, element
 
 
