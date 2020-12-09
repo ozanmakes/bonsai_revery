@@ -168,6 +168,7 @@ module Components : sig
     type props =
       { on_value_changed : float -> Event.t
       ; vertical : bool
+      ; reverse : bool
       ; min_value : float
       ; max_value : float
       ; init_value : float
@@ -180,6 +181,7 @@ module Components : sig
     val props
       :  ?on_value_changed:(float -> Import.Event.t)
       -> ?vertical:bool
+      -> ?reverse:bool
       -> ?min_value:float
       -> ?max_value:float
       -> ?init_value:float
@@ -215,6 +217,8 @@ module Components : sig
       -> ?track_color:Color.t
       -> ?thumb_color:Color.t
       -> ?min_thumb_size:int
+      -> ?x_reverse:bool
+      -> ?y_reverse:bool
       -> Style.t list
       -> props
 
