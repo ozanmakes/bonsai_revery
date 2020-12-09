@@ -393,6 +393,7 @@ let slider_box =
           ~thumb_color:(Color.hex "#9D77D1")
           ~max_value:100.
           ~vertical:false
+          ~init_value:50.
           ())
     >>> Slider.component in
   let display =
