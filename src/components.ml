@@ -3,6 +3,32 @@ open Import
 open Bonsai.Infix
 module Attr = Attributes
 
+let mouse_capture
+    ?(on_mouse_down = fun state _evt -> Event.no_op, Some state)
+    ?(on_mouse_up = fun state _evt -> Event.no_op, Some state)
+    ?(on_mouse_move = fun state _evt -> Event.no_op, Some state)
+    ?(on_mouse_wheel = fun state _evt -> Event.no_op, Some state)
+    ?(on_release = fun _state -> Event.no_op)
+    initial_state
+  =
+  let state = ref (Some initial_state) in
+  let wrap f mouse_event =
+    ( match !state with
+    | Some s ->
+      let event, new_state = f s mouse_event in
+      Event.Expert.handle event;
+      state := new_state
+    | None -> () );
+    if Option.is_none !state then Revery_UI.Mouse.releaseCapture () in
+  Revery_UI.Mouse.setCapture
+    (Option.value_exn (Revery_UI.getActiveWindow ()))
+    ~onMouseDown:(wrap on_mouse_down)
+    ~onMouseUp:(wrap on_mouse_up)
+    ~onMouseMove:(wrap on_mouse_move)
+    ~onMouseWheel:(wrap on_mouse_wheel)
+    ~onRelease:(fun () -> on_release !state |> Event.Expert.handle)
+
+
 let make_native_component constructor attributes f hooks =
   let open UI.React in
   let children, hooks = f hooks in
@@ -714,7 +740,7 @@ module Draggable = struct
     ; freedom : freedom
     ; snap_back : bool
     ; on_drag : x:float -> y:float -> Event.t
-    ; on_drop : BoundingBox2d.t -> Event.t
+    ; on_drop : x:float -> y:float -> Event.t
     }
   [@@deriving sexp_of]
 
@@ -723,7 +749,7 @@ module Draggable = struct
       ?(freedom = Free)
       ?(snap_back = false)
       ?(on_drag = fun ~x:_ ~y:_ -> Event.no_op)
-      ?(on_drop = fun _ -> Event.no_op)
+      ?(on_drop = fun ~x:_ ~y:_ -> Event.no_op)
       styles
     =
     { styles; attributes; freedom; snap_back; on_drag; on_drop }
@@ -732,26 +758,34 @@ module Draggable = struct
   module T = struct
     module Model = struct
       type t =
-        { start : (float * float) option
+        { grabbed : bool
         ; x_trans : float
         ; y_trans : float
         ; inner_box : (BoundingBox2d.t[@sexp.opaque]) option
         ; outer_box : (BoundingBox2d.t[@sexp.opaque]) option
+        ; node : (UI.node[@sexp.opaque] [@equal.ignore]) option
         }
       [@@deriving equal, sexp]
 
-      let default = { start = None; x_trans = 0.; y_trans = 0.; inner_box = None; outer_box = None }
+      let default =
+        { grabbed = false
+        ; x_trans = 0.
+        ; y_trans = 0.
+        ; inner_box = None
+        ; outer_box = None
+        ; node = None
+        }
     end
 
     module Action = struct
       type t =
-        | Grab of float * float
+        | Grab
         | Drop
         | Drag of float * float
         | Shift of float * float
-        | Reset
         | InnerBox of (BoundingBox2d.t[@sexp.opaque])
         | OuterBox of (BoundingBox2d.t[@sexp.opaque])
+        | Set_node of (UI.node[@sexp.opaque])
       [@@deriving sexp_of]
     end
 
@@ -786,6 +820,8 @@ module Draggable = struct
     let shift freedom bb boundary x0 y0 x1 y1 =
       let min_x, min_y, max_x, max_y =
         Option.value_map ~default:boundless ~f:(allowable_movement bb) boundary in
+      Log.perf (sprintf "box l: %.2f t: %.2f r: %.2f b: %.2f" min_x min_y max_x max_y) (fun () ->
+          ());
       match freedom with
       | Free ->
         ( Float.clamp_exn (x1 -. x0) ~min:min_x ~max:max_x
@@ -795,38 +831,61 @@ module Draggable = struct
 
 
     let compute ~inject ((child, props) : Input.t) (model : Model.t) =
+      let handle_mouse_up state ({ button; _ } : Node_events.Mouse_button.t) =
+        let x0, y0, corner_x, corner_y, x_trans, y_trans = state in
+        ( Event.Many
+            ( match button with
+            | BUTTON_LEFT ->
+              inject Drop
+              :: props.on_drop ~x:(corner_x +. x_trans) ~y:(corner_y +. y_trans)
+              :: (if props.snap_back then [ inject (Drag (0., 0.)) ] else [])
+            | _ -> [ Event.no_op ] )
+        , None ) in
+
+      let handle_mouse_move state ({ mouseX = x1; mouseY = y1; _ } : Node_events.Mouse_move.t) =
+        let x0, y0, corner_x, corner_y, x_trans, y_trans = state in
+        match model.node with
+        | Some node ->
+          let o_l, o_t, o_r, o_b =
+            Option.value_map ~default:boundless ~f:BoundingBox2d.get_bounds model.outer_box in
+          let i_l, i_t, i_r, i_b = BoundingBox2d.get_bounds (node#getBoundingBox ()) in
+          let x, y =
+            match props.freedom with
+            | Free -> x1 -. x0, y1 -. y0
+            | X ->
+              ( Float.clamp_exn
+                  (x1 -. x0)
+                  ~min:(o_l -. corner_x)
+                  ~max:(o_r -. corner_x +. (i_l -. i_r))
+              , 0. )
+            | Y ->
+              ( 0.
+              , Float.clamp_exn
+                  (y1 -. y0)
+                  ~min:(o_t -. corner_y)
+                  ~max:(o_b -. corner_y +. (i_t -. i_b)) ) in
+          ( Event.Many [ inject (Drag (x, y)); props.on_drag ~x ~y ]
+          , Some (x0, y0, corner_x, corner_y, x, y) )
+        | _ -> Event.no_op, None in
+
       let handle_mouse_down ({ button; mouseX; mouseY; _ } : Node_events.Mouse_button.t) =
-        match button with
-        | BUTTON_LEFT -> inject (Grab (mouseX, mouseY))
+        match button, model.node with
+        | BUTTON_LEFT, Some node ->
+          let inner_world = node#getWorldTransform () in
+          let corner_x = Skia.Matrix.getTranslateX inner_world in
+          let corner_y = Skia.Matrix.getTranslateY inner_world in
+          mouse_capture
+            ~on_mouse_move:handle_mouse_move
+            ~on_mouse_up:handle_mouse_up
+            ( mouseX -. model.x_trans
+            , mouseY -. model.y_trans
+            , corner_x -. model.x_trans
+            , corner_y -. model.y_trans
+            , model.x_trans
+            , model.y_trans );
+          Event.no_op
         | _ -> Event.no_op in
-      let handle_mouse_up ({ button; _ } : Node_events.Mouse_button.t) =
-        Event.Many
-          ( match button with
-          | BUTTON_LEFT ->
-            inject Drop
-            :: List.filter_opt
-                 [ Option.map model.inner_box ~f:(fun bb -> props.on_drop bb)
-                 ; (if props.snap_back then Some (inject Reset) else None)
-                 ]
-          | BUTTON_RIGHT -> [ inject Reset ]
-          | _ -> [ Event.no_op ] ) in
-      let handle_mouse_move ({ mouseX = x1; mouseY = y1; _ } : Node_events.Mouse_move.t) =
-        Event.Many
-          ( match model.start, model.inner_box with
-          | Some (x0, y0), Some inner_box ->
-            let x_shift, y_shift =
-              shift
-                props.freedom
-                inner_box
-                model.outer_box
-                (x0 +. model.x_trans)
-                (y0 +. model.y_trans)
-                x1
-                y1 in
-            let x = x_shift +. model.x_trans in
-            let y = y_shift +. model.y_trans in
-            [ inject (Drag (x, y)); props.on_drag ~x ~y ]
-          | _ -> [ Event.no_op ] ) in
+
       let handle_bounding_box_change bb = inject (InnerBox bb) in
       let trans = Style.(transform [ TranslateX model.x_trans; TranslateY model.y_trans ]) in
 
@@ -836,9 +895,8 @@ module Draggable = struct
         box
           Attr.(
             on_mouse_down handle_mouse_down
-            :: on_mouse_up handle_mouse_up
-            :: on_mouse_move handle_mouse_move
             :: on_bounding_box_changed handle_bounding_box_change
+            :: node_ref (fun n -> inject (Set_node n))
             :: style (trans :: props.styles)
             :: props.attributes)
           [ child ] in
@@ -846,28 +904,25 @@ module Draggable = struct
 
 
     let apply_action ~inject:_ ~schedule_event:_ ((_, props) : Input.t) (model : Model.t) = function
-      | Grab (x, y) -> { model with start = Some (x -. model.x_trans, y -. model.y_trans) }
-      | Drop -> { model with start = None }
+      | Grab -> { model with grabbed = true }
+      | Drop -> { model with grabbed = false }
       | Drag (x, y) -> { model with x_trans = x; y_trans = y }
       | Shift (x, y) ->
         ( match model.inner_box with
         | None -> model
         | Some inner_box ->
           let x0, y0 =
-            match model.start with
-            | Some (x, y) -> x, y
-            | None ->
-              let l, t, r, b = BoundingBox2d.get_bounds inner_box in
-              (l +. r) /. 2., (t +. b) /. 2. in
+            let l, t, r, b = BoundingBox2d.get_bounds inner_box in
+            (l +. r) /. 2., (t +. b) /. 2. in
           let x_pos = x0 +. model.x_trans in
           let y_pos = y0 +. model.y_trans in
           let shift_x, shift_y =
             shift props.freedom inner_box model.outer_box x_pos y_pos (x_pos +. x) (y_pos +. y)
           in
           { model with x_trans = shift_x +. model.x_trans; y_trans = shift_y +. model.y_trans } )
-      | Reset -> { model with x_trans = 0.; y_trans = 0. }
       | InnerBox bb -> { model with inner_box = Some bb }
       | OuterBox bb -> { model with outer_box = Some bb }
+      | Set_node node -> { model with node = Some node }
   end
 
   let component = Bonsai.of_module (module T) ~default_model:T.Model.default
