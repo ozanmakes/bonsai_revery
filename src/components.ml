@@ -739,8 +739,8 @@ module Draggable = struct
     ; attributes : Attr.t list
     ; freedom : freedom
     ; snap_back : bool
-    ; on_drag : x:float -> y:float -> Event.t
-    ; on_drop : x:float -> y:float -> Event.t
+    ; on_drag : bb:BoundingBox2d.t -> x:float -> y:float -> Event.t
+    ; on_drop : bb:BoundingBox2d.t -> x:float -> y:float -> Event.t
     }
   [@@deriving sexp_of]
 
@@ -748,8 +748,8 @@ module Draggable = struct
       ?(attributes = [])
       ?(freedom = Free)
       ?(snap_back = false)
-      ?(on_drag = fun ~x:_ ~y:_ -> Event.no_op)
-      ?(on_drop = fun ~x:_ ~y:_ -> Event.no_op)
+      ?(on_drag = fun ~bb:_ ~x:_ ~y:_ -> Event.no_op)
+      ?(on_drop = fun ~bb:_ ~x:_ ~y:_ -> Event.no_op)
       styles
     =
     { styles; attributes; freedom; snap_back; on_drag; on_drop }
@@ -836,38 +836,45 @@ module Draggable = struct
         ( Event.Many
             ( match button with
             | BUTTON_LEFT ->
+              let drop =
+                Option.map model.node ~f:(fun n ->
+                    props.on_drop
+                      ~x:(corner_x +. x_trans)
+                      ~y:(corner_y +. y_trans)
+                      ~bb:(n#getBoundingBox ())) in
               inject Drop
-              :: props.on_drop ~x:(corner_x +. x_trans) ~y:(corner_y +. y_trans)
-              :: (if props.snap_back then [ inject (Drag (0., 0.)) ] else [])
+              :: List.filter_opt
+                   [ drop; (if props.snap_back then Some (inject (Drag (0., 0.))) else None) ]
             | _ -> [ Event.no_op ] )
         , None ) in
-
       let handle_mouse_move state ({ mouseX = x1; mouseY = y1; _ } : Node_events.Mouse_move.t) =
         let x0, y0, corner_x, corner_y, x_trans, y_trans = state in
         match model.node with
         | Some node ->
+          let bb = node#getBoundingBox () in
+          let i_l, i_t, i_r, i_b = BoundingBox2d.get_bounds bb in
           let o_l, o_t, o_r, o_b =
             Option.value_map ~default:boundless ~f:BoundingBox2d.get_bounds model.outer_box in
-          let i_l, i_t, i_r, i_b = BoundingBox2d.get_bounds (node#getBoundingBox ()) in
-          let x, y =
+          let x =
             match props.freedom with
-            | Free -> x1 -. x0, y1 -. y0
-            | X ->
-              ( Float.clamp_exn
-                  (x1 -. x0)
-                  ~min:(o_l -. corner_x)
-                  ~max:(o_r -. corner_x +. (i_l -. i_r))
-              , 0. )
-            | Y ->
-              ( 0.
-              , Float.clamp_exn
-                  (y1 -. y0)
-                  ~min:(o_t -. corner_y)
-                  ~max:(o_b -. corner_y +. (i_t -. i_b)) ) in
-          ( Event.Many [ inject (Drag (x, y)); props.on_drag ~x ~y ]
+            | Free | X ->
+              Float.clamp_exn
+                (x1 -. x0)
+                ~min:(o_l -. corner_x)
+                ~max:(o_r -. corner_x +. (i_l -. i_r))
+            | Y -> 0. in
+          let y =
+            match props.freedom with
+            | Free | Y ->
+              Float.clamp_exn
+                (y1 -. y0)
+                ~min:(o_t -. corner_y)
+                ~max:(o_b -. corner_y +. (i_t -. i_b))
+            | X -> 0. in
+          ( Event.Many
+              [ inject (Drag (x, y)); props.on_drag ~bb ~x:(x +. corner_x) ~y:(y +. corner_y) ]
           , Some (x0, y0, corner_x, corner_y, x, y) )
         | _ -> Event.no_op, None in
-
       let handle_mouse_down ({ button; mouseX; mouseY; _ } : Node_events.Mouse_button.t) =
         match button, model.node with
         | BUTTON_LEFT, Some node ->

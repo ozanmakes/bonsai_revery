@@ -71,16 +71,16 @@ module Draggable : sig
     ; attributes : Attributes.t list
     ; freedom : freedom
     ; snap_back : bool
-    ; on_drag : x:float -> y:float -> Event.t
-    ; on_drop : x:float -> y:float -> Event.t
+    ; on_drag : bb:BoundingBox2d.t -> x:float -> y:float -> Event.t
+    ; on_drop : bb:BoundingBox2d.t -> x:float -> y:float -> Event.t
     }
 
   val props
     :  ?attributes:Attributes.t list
     -> ?freedom:freedom
     -> ?snap_back:bool
-    -> ?on_drag:(x:float -> y:float -> Event.t)
-    -> ?on_drop:(x:float -> y:float -> Event.t)
+    -> ?on_drag:(bb:BoundingBox2d.t -> x:float -> y:float -> Event.t)
+    -> ?on_drop:(bb:BoundingBox2d.t -> x:float -> y:float -> Event.t)
     -> Style.t list
     -> props
 
