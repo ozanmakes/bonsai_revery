@@ -472,6 +472,13 @@ module Text_input = struct
 
       let update value cursor_position = inject (Action.Text_input (value, cursor_position)) in
 
+      let paste value cursor_position =
+        match Sdl2.Clipboard.getText () with
+        | None -> Event.no_op
+        | Some data ->
+          let value, cursor_position = insertString value data cursor_position in
+          update value cursor_position in
+
       let handle_text_input (event : Node_events.Text_input.t) =
         let value, cursor_position = insertString value event.text cursor_position in
         update value cursor_position in
@@ -491,6 +498,7 @@ module Text_input = struct
           | Backspace ->
             let value, cursor_position = removeCharacterBefore value cursor_position in
             inject (Action.Text_input (value, cursor_position))
+          | V when keyboard_event.ctrl -> paste value cursor_position
           | Escape ->
             UI.Focus.loseFocus ();
             Event.no_op
