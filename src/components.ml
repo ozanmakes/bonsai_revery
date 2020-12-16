@@ -828,8 +828,6 @@ module Draggable = struct
     let shift freedom bb boundary x0 y0 x1 y1 =
       let min_x, min_y, max_x, max_y =
         Option.value_map ~default:boundless ~f:(allowable_movement bb) boundary in
-      Log.perf (sprintf "box l: %.2f t: %.2f r: %.2f b: %.2f" min_x min_y max_x max_y) (fun () ->
-          ());
       match freedom with
       | Free ->
         ( Float.clamp_exn (x1 -. x0) ~min:min_x ~max:max_x
