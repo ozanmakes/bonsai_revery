@@ -1225,7 +1225,7 @@ module ScrollView = struct
         ; y : slider
         }
 
-      type t = control * sliders * Element.t Map.M(Int).t * props
+      type t = control * sliders * Element.t list * props
     end
 
     open Action
@@ -1288,7 +1288,7 @@ module ScrollView = struct
             :: node_ref (fun n -> inject (SetViewNode n))
             :: style Style.(overflow `Hidden :: props.styles)
             :: props.attributes)
-          (Map.mapi ~f:(fun ~key ~data -> box trans [ data ]) children |> Map.data) in
+          (List.map ~f:(fun c -> box trans [ c ]) children) in
 
       let element =
         let inner_box =

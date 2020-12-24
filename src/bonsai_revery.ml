@@ -222,7 +222,7 @@ module Components : sig
       -> Style.t list
       -> props
 
-    val component : (Element.t Map.M(Int).t * props, Element.t) Bonsai.t
+    val component : (Element.t list * props, Element.t) Bonsai.t
   end
 
   module Expert : sig

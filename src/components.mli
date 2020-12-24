@@ -131,8 +131,6 @@ module Slider : sig
 end
 
 module ScrollView : sig
-  open Core_kernel
-
   type props =
     { speed : float
     ; styles : Style.t list
@@ -153,7 +151,7 @@ module ScrollView : sig
     -> Style.t list
     -> props
 
-  val component : (Element.t Map.M(Int).t * props, Element.t) Bonsai.t
+  val component : (Element.t list * props, Element.t) Bonsai.t
 end
 
 module Expert : sig

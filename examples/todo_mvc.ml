@@ -416,7 +416,7 @@ let scroll_view_list =
       ~track_color:Theme.dimmed_text_color
       ~thumb_color:(Color.hex "#9D77D1")
       Style.[ flex_direction `Column; flex_grow 1; flex_shrink 1 ] in
-  Bonsai.map todo_list ~f:(fun children -> children, props) >>> ScrollView.component
+  Bonsai.map todo_list ~f:(fun children -> Map.data children, props) >>> ScrollView.component
 
 
 let text_input =
